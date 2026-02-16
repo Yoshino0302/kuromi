@@ -1,145 +1,192 @@
 import * as THREE from 'https://jspm.dev/three'
-import { GLTFLoader } from 'https://jspm.dev/three/examples/jsm/loaders/GLTFLoader.js'
+import { EffectComposer } from 'https://jspm.dev/three/examples/jsm/postprocessing/EffectComposer.js'
+import { RenderPass } from 'https://jspm.dev/three/examples/jsm/postprocessing/RenderPass.js'
+import { UnrealBloomPass } from 'https://jspm.dev/three/examples/jsm/postprocessing/UnrealBloomPass.js'
 
 const canvas = document.getElementById('webgl')
 
+// =================================
+// BASIC SETUP
+// =================================
 const scene = new THREE.Scene()
-const camera = new THREE.PerspectiveCamera(
-    75,
-    window.innerWidth / window.innerHeight,
-    0.1,
-    1000
-)
-camera.position.z = 8
 
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true })
-renderer.setSize(window.innerWidth, window.innerHeight)
+const camera = new THREE.PerspectiveCamera(
+75,
+window.innerWidth/window.innerHeight,
+0.1,
+100
+)
+camera.position.set(0,0,8)
+
+const renderer = new THREE.WebGLRenderer({canvas, antialias:true})
+renderer.setSize(window.innerWidth,window.innerHeight)
 renderer.setPixelRatio(window.devicePixelRatio)
 renderer.outputColorSpace = THREE.SRGBColorSpace
 renderer.toneMapping = THREE.ACESFilmicToneMapping
 renderer.toneMappingExposure = 1.2
 
-// =========================
-// LIGHTING
-// =========================
-const ambient = new THREE.AmbientLight(0xffffff, 0.8)
+// =================================
+// POST PROCESSING
+// =================================
+const composer = new EffectComposer(renderer)
+composer.addPass(new RenderPass(scene,camera))
+
+const bloom = new UnrealBloomPass(
+new THREE.Vector2(window.innerWidth,window.innerHeight),
+1.5,
+0.4,
+0.85
+)
+composer.addPass(bloom)
+
+// =================================
+// LIGHT
+// =================================
+const ambient = new THREE.AmbientLight(0xffffff,0.4)
 scene.add(ambient)
 
-const pointLight = new THREE.PointLight(0xff69b4, 5, 50)
-pointLight.position.set(5, 5, 5)
-scene.add(pointLight)
+const backLight = new THREE.PointLight(0xff00aa,5,20)
+backLight.position.set(0,2,-2)
+scene.add(backLight)
 
-// =========================
-// SCENE 1 - HEART PLANET
-// =========================
-const heartGeometry = new THREE.SphereGeometry(2, 64, 64)
-const heartMaterial = new THREE.MeshStandardMaterial({
-    color: 0xff4da6,
-    emissive: 0xff1493,
-    emissiveIntensity: 1,
-    roughness: 0.2,
-    metalness: 0.6
+// =================================
+// SCENE 1 – HEART PLANET
+// =================================
+const heartGeo = new THREE.SphereGeometry(2,64,64)
+const heartMat = new THREE.MeshStandardMaterial({
+color:0xff4da6,
+emissive:0xff1493,
+emissiveIntensity:2,
+roughness:0.2,
+metalness:0.7
 })
 
-const heartPlanet = new THREE.Mesh(heartGeometry, heartMaterial)
-scene.add(heartPlanet)
+const heart = new THREE.Mesh(heartGeo,heartMat)
+scene.add(heart)
 
 // PARTICLES
 const particleCount = 2000
-const particleGeometry = new THREE.BufferGeometry()
-const positions = new Float32Array(particleCount * 3)
+const particleGeo = new THREE.BufferGeometry()
+const pos = new Float32Array(particleCount*3)
 
-for (let i = 0; i < particleCount * 3; i++) {
-    positions[i] = (Math.random() - 0.5) * 50
+for(let i=0;i<particleCount*3;i++){
+pos[i]=(Math.random()-0.5)*50
 }
 
-particleGeometry.setAttribute(
-    'position',
-    new THREE.BufferAttribute(positions, 3)
-)
+particleGeo.setAttribute('position',
+new THREE.BufferAttribute(pos,3))
 
-const particleMaterial = new THREE.PointsMaterial({
-    color: 0xffffff,
-    size: 0.05
+const particleMat = new THREE.PointsMaterial({
+color:0xffffff,
+size:0.05
 })
 
-const particles = new THREE.Points(particleGeometry, particleMaterial)
+const particles = new THREE.Points(particleGeo,particleMat)
 scene.add(particles)
 
-// =========================
-// SCENE 2 - KUROMI WORLD
-// =========================
-let kuromiModel = null
-const loader = new GLTFLoader()
+// =================================
+// SCENE 2 – SILHOUETTE (INSPIRED)
+// =================================
+const group = new THREE.Group()
 
-loader.load('./assets/kuromi.glb', (gltf) => {
-    kuromiModel = gltf.scene
-    kuromiModel.scale.set(2,2,2)
-    kuromiModel.position.y = -2
-    kuromiModel.visible = false
-    scene.add(kuromiModel)
+// body
+const body = new THREE.Mesh(
+new THREE.SphereGeometry(1.5,64,64),
+new THREE.MeshBasicMaterial({color:0x000000})
+)
+body.position.y = -0.5
+group.add(body)
+
+// head
+const head = new THREE.Mesh(
+new THREE.SphereGeometry(1.2,64,64),
+new THREE.MeshBasicMaterial({color:0x000000})
+)
+head.position.y = 1.5
+group.add(head)
+
+// ears
+const earGeo = new THREE.ConeGeometry(0.6,2,64)
+const ear1 = new THREE.Mesh(earGeo,new THREE.MeshBasicMaterial({color:0x000000}))
+ear1.position.set(-0.8,3,0)
+ear1.rotation.z = 0.2
+group.add(ear1)
+
+const ear2 = ear1.clone()
+ear2.position.x = 0.8
+ear2.rotation.z = -0.2
+group.add(ear2)
+
+group.visible = false
+scene.add(group)
+
+// neon heart background
+const neon = new THREE.Mesh(
+new THREE.TorusGeometry(3,0.15,32,200),
+new THREE.MeshBasicMaterial({color:0xff00aa})
+)
+neon.rotation.x = Math.PI/2
+neon.visible = false
+scene.add(neon)
+
+// =================================
+// TRANSITION
+// =================================
+let sceneIndex = 1
+let transitioning = false
+
+window.addEventListener('click',()=>{
+if(sceneIndex===1 && !transitioning){
+transitioning = true
+}
 })
 
-// Neon heart behind Kuromi
-const neonGeometry = new THREE.TorusGeometry(3, 0.2, 32, 100)
-const neonMaterial = new THREE.MeshStandardMaterial({
-    color: 0xff00aa,
-    emissive: 0xff00aa,
-    emissiveIntensity: 3
-})
-
-const neonHeart = new THREE.Mesh(neonGeometry, neonMaterial)
-neonHeart.rotation.x = Math.PI / 2
-neonHeart.position.y = -2
-neonHeart.visible = false
-scene.add(neonHeart)
-
-// =========================
-// SCENE SWITCH
-// =========================
-let currentScene = 1
-
-window.addEventListener('click', () => {
-    if (currentScene === 1) {
-        currentScene = 2
-        heartPlanet.visible = false
-        if (kuromiModel) kuromiModel.visible = true
-        neonHeart.visible = true
-        pointLight.color.set(0xff00aa)
-        scene.background = new THREE.Color(0x1a001f)
-    }
-})
-
-// =========================
-// ANIMATION LOOP
-// =========================
 const clock = new THREE.Clock()
 
-function animate() {
-    requestAnimationFrame(animate)
+function animate(){
+requestAnimationFrame(animate)
 
-    const elapsed = clock.getElapsedTime()
+const t = clock.getElapsedTime()
 
-    if (currentScene === 1) {
-        heartPlanet.rotation.y += 0.003
-        particles.rotation.y += 0.0005
-    }
+// cinematic camera motion
+camera.position.x = Math.sin(t*0.2)*1.5
+camera.lookAt(0,0,0)
 
-    if (currentScene === 2 && kuromiModel) {
-        kuromiModel.rotation.y = Math.sin(elapsed) * 0.3
-        neonHeart.rotation.z += 0.01
-    }
+if(sceneIndex===1){
 
-    renderer.render(scene, camera)
+heart.rotation.y += 0.01
+particles.rotation.y += 0.0005
+
+if(transitioning){
+heart.scale.multiplyScalar(0.97)
+if(heart.scale.x<0.05){
+heart.visible=false
+particles.visible=false
+group.visible=true
+neon.visible=true
+scene.background=new THREE.Color(0x14001f)
+sceneIndex=2
+}
+}
+
+}else{
+
+group.rotation.y = Math.sin(t)*0.3
+neon.rotation.z += 0.01
+
+}
+
+composer.render()
 }
 
 animate()
 
-// =========================
+// =================================
 // RESIZE
-// =========================
-window.addEventListener('resize', () => {
-    camera.aspect = window.innerWidth / window.innerHeight
-    camera.updateProjectionMatrix()
-    renderer.setSize(window.innerWidth, window.innerHeight)
+// =================================
+window.addEventListener('resize',()=>{
+camera.aspect=window.innerWidth/window.innerHeight
+camera.updateProjectionMatrix()
+renderer.setSize(window.innerWidth,window.innerHeight)
+composer.setSize(window.innerWidth,window.innerHeight)
 })
