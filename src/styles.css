@@ -18,12 +18,13 @@ canvas {
   transform: translate(-50%, -50%);
   text-align: center;
   color: white;
+  z-index: 10;
 }
 
 .overlay h1 {
   font-size: 3rem;
   letter-spacing: 4px;
-  text-shadow: 0 0 20px hotpink;
+  text-shadow: 0 0 30px hotpink;
 }
 
 button {
