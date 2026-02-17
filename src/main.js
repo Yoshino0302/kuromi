@@ -31,17 +31,13 @@ const manager = new SceneManager(renderer, camera)
 const introScene = new IntroScene(camera)
 manager.setScene(introScene)
 
-document.getElementById('enterBtn').addEventListener('click', async () => {
+document.getElementById('enterBtn').addEventListener('click', () => {
 
   const darkScene = new DarkScene(camera)
 
   document.querySelector('.overlay').style.display = 'none'
 
   manager.setScene(darkScene)
-
-  if (darkScene.init instanceof Function) {
-    await darkScene.init()
-  }
 })
 
 function animate() {
