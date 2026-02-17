@@ -2,33 +2,6 @@ import * as THREE from 'https://jspm.dev/three'
 import { EffectComposer } from 'https://jspm.dev/three/examples/jsm/postprocessing/EffectComposer.js'
 import { RenderPass } from 'https://jspm.dev/three/examples/jsm/postprocessing/RenderPass.js'
 import { UnrealBloomPass } from 'https://jspm.dev/three/examples/jsm/postprocessing/UnrealBloomPass.js'
-import { ShaderPass } from 'https://jspm.dev/three/examples/jsm/postprocessing/ShaderPass.js'
-
-const GlitchShader = {
-  uniforms: {
-    tDiffuse: { value: null },
-    uTime: { value: 0 }
-  },
-  vertexShader: `
-    varying vec2 vUv;
-    void main() {
-      vUv = uv;
-      gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0);
-    }
-  `,
-  fragmentShader: `
-    uniform sampler2D tDiffuse;
-    uniform float uTime;
-    varying vec2 vUv;
-
-    void main() {
-      vec2 uv = vUv;
-      uv.x += sin(uv.y * 50.0 + uTime * 20.0) * 0.01;
-      vec4 color = texture2D(tDiffuse, uv);
-      gl_FragColor = color;
-    }
-  `
-}
 
 export class SceneManager {
 
@@ -50,27 +23,38 @@ export class SceneManager {
       0.05
     )
     this.composer.addPass(this.bloomPass)
-
-    this.glitchPass = new ShaderPass(GlitchShader)
-    this.composer.addPass(this.glitchPass)
   }
 
   setScene(sceneInstance) {
+
+    if (this.currentScene?.dispose) {
+      this.currentScene.dispose()
+    }
+
     this.currentScene = sceneInstance
-    this.currentScene.init()
-    this.renderPass.scene = this.currentScene.scene
+
+    try {
+      this.currentScene.init()
+      this.renderPass.scene = this.currentScene.scene
+    } catch (e) {
+      console.error('Scene init failed:', e)
+    }
   }
 
   update() {
 
-    const elapsed = this.clock.getElapsedTime()
+    if (!this.currentScene) return
 
-    if (this.currentScene?.update) {
-      this.currentScene.update(elapsed)
+    const delta = this.clock.getDelta()
+
+    try {
+      if (this.currentScene.update) {
+        this.currentScene.update(delta)
+      }
+
+      this.composer.render()
+    } catch (e) {
+      console.error('Scene update error:', e)
     }
-
-    this.glitchPass.uniforms.uTime.value = elapsed
-
-    this.composer.render()
   }
 }
