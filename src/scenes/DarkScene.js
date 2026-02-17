@@ -20,7 +20,7 @@ export class DarkScene {
     const mat = new THREE.MeshStandardMaterial({
       color: 0xff00aa,
       emissive: 0xff0088,
-      emissiveIntensity: 4,
+      emissiveIntensity: 1.5,
       metalness: 1,
       roughness: 0
     })
