@@ -9,10 +9,13 @@ export class DarkScene {
 
   init() {
 
-    const geo = new THREE.TorusKnotGeometry(5, 1, 200, 32)
+    this.camera.position.set(0, 0, 30)
+
+    const geo = new THREE.TorusKnotGeometry(6, 1.5, 200, 32)
     const mat = new THREE.MeshStandardMaterial({
       color: 0xff00aa,
       emissive: 0xff0088,
+      emissiveIntensity: 1,
       metalness: 1,
       roughness: 0
     })
@@ -20,16 +23,14 @@ export class DarkScene {
     this.mesh = new THREE.Mesh(geo, mat)
     this.scene.add(this.mesh)
 
-    const light = new THREE.PointLight(0xff00aa, 3)
-    light.position.set(5,5,5)
+    const light = new THREE.PointLight(0xff00aa, 4)
+    light.position.set(10, 10, 10)
     this.scene.add(light)
-
-    this.camera.position.z = 25
   }
 
   update() {
     this.mesh.rotation.x += 0.01
-    this.mesh.rotation.y += 0.01
+    this.mesh.rotation.y += 0.015
   }
 
   dispose() {
