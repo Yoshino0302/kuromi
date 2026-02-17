@@ -9,12 +9,22 @@ export class IntroScene {
 
   init() {
 
-    const geo = new THREE.ConeGeometry(5, 10, 4)
-    const mat = new THREE.MeshBasicMaterial({ color: 0xff0088 })
-    this.mesh = new THREE.Mesh(geo, mat)
+    this.camera.position.set(0, 0, 20)
 
+    const geo = new THREE.ConeGeometry(5, 10, 4)
+    const mat = new THREE.MeshStandardMaterial({
+      color: 0xff0088,
+      emissive: 0xff0088,
+      metalness: 0.8,
+      roughness: 0.2
+    })
+
+    this.mesh = new THREE.Mesh(geo, mat)
     this.scene.add(this.mesh)
-    this.camera.position.z = 20
+
+    const light = new THREE.PointLight(0xff00aa, 3)
+    light.position.set(5, 5, 5)
+    this.scene.add(light)
   }
 
   update() {
