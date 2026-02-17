@@ -124,4 +124,26 @@ export class DarkScene {
     this.core.rotation.y += 0.015
 
     // breathing pulse
-    const pulse = 1 + Math.sin(elapsed
+    const pulse = 1 + Math.sin(elapsed * 2) * 0.05
+    this.core.scale.set(pulse, pulse, pulse)
+
+    // inner distortion effect
+    this.innerCore.rotation.y += 0.02
+
+    // orbit rings rotation
+    this.rings.forEach((ring, i) => {
+      ring.rotation.x += 0.005 + i * 0.002
+      ring.rotation.y += 0.004 + i * 0.002
+    })
+
+    // portal slow spin
+    this.portal.rotation.y += 0.003
+    this.portal.rotation.x += 0.002
+
+    this.camera.lookAt(0, 0, 0)
+  }
+
+  dispose() {
+    this.scene.clear()
+  }
+}
