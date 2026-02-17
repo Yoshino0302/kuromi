@@ -1,6 +1,4 @@
 import * as THREE from 'https://jspm.dev/three'
-import { initPortal } from '../effects/portal.js'
-import { initGalaxy } from '../effects/galaxy.js'
 
 export class DarkScene {
 
@@ -12,52 +10,118 @@ export class DarkScene {
 
   init() {
 
-    this.camera.position.set(0, 0, 40)
-    this.scene.fog = new THREE.FogExp2(0x0a0015, 0.05)
+    this.camera.position.set(0, 0, 35)
+    this.scene.fog = new THREE.FogExp2(0x0a0015, 0.03)
 
-    // CORE
-    const geo = new THREE.TorusGeometry(8, 2.5, 64, 200)
-    const mat = new THREE.MeshStandardMaterial({
+    this.createEnergyCore()
+    this.createOrbitRings()
+    this.createCrystalPortal()
+    this.createLights()
+  }
+
+  // ===============================
+  // ENERGY CORE
+  // ===============================
+  createEnergyCore() {
+
+    const geo = new THREE.IcosahedronGeometry(6, 3)
+
+    const mat = new THREE.MeshPhysicalMaterial({
       color: 0xff00aa,
-      emissive: 0xff0088,
-      emissiveIntensity: 1.5,
-      metalness: 1,
-      roughness: 0
+      emissive: 0xff00aa,
+      emissiveIntensity: 1.8,
+      metalness: 0.3,
+      roughness: 0.2,
+      clearcoat: 1,
+      transmission: 0.6,
+      thickness: 1.5,
+      transparent: true
     })
 
     this.core = new THREE.Mesh(geo, mat)
     this.scene.add(this.core)
 
-    // PORTAL
-    const portalData = initPortal(this.scene)
-    this.portalUpdate = portalData?.update || null
+    // inner glow
+    const innerGeo = new THREE.SphereGeometry(3.5, 64, 64)
+    const innerMat = new THREE.MeshBasicMaterial({
+      color: 0xff00ff
+    })
 
-    // GALAXY
-    const galaxyData = initGalaxy(this.scene)
-    this.galaxyUpdate = galaxyData?.update || null
-
-    // LIGHT
-    const light = new THREE.PointLight(0xff00aa, 8, 200)
-    light.position.set(10, 10, 10)
-    this.scene.add(light)
+    this.innerCore = new THREE.Mesh(innerGeo, innerMat)
+    this.scene.add(this.innerCore)
   }
 
-  update() {
+  // ===============================
+  // ORBIT RINGS
+  // ===============================
+  createOrbitRings() {
 
-    if (!this.core) return
+    this.rings = []
+
+    for (let i = 0; i < 3; i++) {
+
+      const ringGeo = new THREE.TorusGeometry(10 + i * 2, 0.15, 32, 200)
+      const ringMat = new THREE.MeshBasicMaterial({
+        color: 0xff00aa
+      })
+
+      const ring = new THREE.Mesh(ringGeo, ringMat)
+      ring.rotation.x = Math.random() * Math.PI
+      ring.rotation.y = Math.random() * Math.PI
+
+      this.scene.add(ring)
+      this.rings.push(ring)
+    }
+  }
+
+  // ===============================
+  // CRYSTAL PORTAL
+  // ===============================
+  createCrystalPortal() {
+
+    const geo = new THREE.IcosahedronGeometry(12, 1)
+
+    const mat = new THREE.MeshPhysicalMaterial({
+      color: 0xff66cc,
+      emissive: 0xff0088,
+      emissiveIntensity: 0.8,
+      transmission: 0.9,
+      thickness: 2,
+      metalness: 0.1,
+      roughness: 0,
+      transparent: true
+    })
+
+    this.portal = new THREE.Mesh(geo, mat)
+    this.portal.position.z = -15
+    this.scene.add(this.portal)
+  }
+
+  // ===============================
+  // LIGHTS
+  // ===============================
+  createLights() {
+
+    const light1 = new THREE.PointLight(0xff00aa, 6, 200)
+    light1.position.set(20, 20, 20)
+
+    const light2 = new THREE.PointLight(0xff0088, 6, 200)
+    light2.position.set(-20, -10, 10)
+
+    this.scene.add(light1)
+    this.scene.add(light2)
+  }
+
+  // ===============================
+  // UPDATE LOOP
+  // ===============================
+  update() {
 
     const elapsed = this.clock.getElapsedTime()
 
+    // core rotation
     this.core.rotation.x += 0.01
     this.core.rotation.y += 0.015
 
-    if (this.portalUpdate) this.portalUpdate(elapsed)
-    if (this.galaxyUpdate) this.galaxyUpdate(elapsed)
-
-    this.camera.lookAt(0, 0, 0)
-  }
-
-  dispose() {
-    this.scene.clear()
-  }
-}
+    // breathing pulse
+    const pulse = 1 + Math.sin(elapsed
