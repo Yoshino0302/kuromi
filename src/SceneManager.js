@@ -2,61 +2,75 @@ import * as THREE from 'https://jspm.dev/three'
 import { EffectComposer } from 'https://jspm.dev/three/examples/jsm/postprocessing/EffectComposer.js'
 import { RenderPass } from 'https://jspm.dev/three/examples/jsm/postprocessing/RenderPass.js'
 import { UnrealBloomPass } from 'https://jspm.dev/three/examples/jsm/postprocessing/UnrealBloomPass.js'
+import { ShaderPass } from 'https://jspm.dev/three/examples/jsm/postprocessing/ShaderPass.js'
+
+const GlitchShader = {
+  uniforms: {
+    tDiffuse: { value: null },
+    uTime: { value: 0 }
+  },
+  vertexShader: `
+    varying vec2 vUv;
+    void main() {
+      vUv = uv;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0);
+    }
+  `,
+  fragmentShader: `
+    uniform sampler2D tDiffuse;
+    uniform float uTime;
+    varying vec2 vUv;
+
+    void main() {
+      vec2 uv = vUv;
+      uv.x += sin(uv.y * 50.0 + uTime * 20.0) * 0.01;
+      vec4 color = texture2D(tDiffuse, uv);
+      gl_FragColor = color;
+    }
+  `
+}
 
 export class SceneManager {
 
   constructor(renderer, camera) {
+
     this.renderer = renderer
     this.camera = camera
     this.currentScene = null
-
     this.clock = new THREE.Clock()
 
-    // ---------- POST PROCESSING ----------
-    this.composer = new EffectComposer(this.renderer)
-
-    this.renderPass = new RenderPass(new THREE.Scene(), this.camera)
+    this.composer = new EffectComposer(renderer)
+    this.renderPass = new RenderPass(new THREE.Scene(), camera)
     this.composer.addPass(this.renderPass)
 
-    // FULL CYBERPUNK GLOW MODE (C)
     this.bloomPass = new UnrealBloomPass(
       new THREE.Vector2(window.innerWidth, window.innerHeight),
-      2.2,   // strength (rất mạnh)
-      1.5,   // radius (glow lan rộng)
-      0.05   // threshold (gần như mọi neon đều glow)
+      2.2,
+      1.5,
+      0.05
     )
-
     this.composer.addPass(this.bloomPass)
 
-    window.addEventListener('resize', () => {
-      this.composer.setSize(window.innerWidth, window.innerHeight)
-    })
+    this.glitchPass = new ShaderPass(GlitchShader)
+    this.composer.addPass(this.glitchPass)
   }
 
   setScene(sceneInstance) {
-
-    if (this.currentScene?.dispose) {
-      this.currentScene.dispose()
-    }
-
     this.currentScene = sceneInstance
     this.currentScene.init()
-
-    // Update render pass scene
     this.renderPass.scene = this.currentScene.scene
   }
 
   update() {
 
-    if (!this.currentScene) return
+    const elapsed = this.clock.getElapsedTime()
 
-    const delta = this.clock.getDelta()
-
-    if (this.currentScene.update) {
-      this.currentScene.update(delta)
+    if (this.currentScene?.update) {
+      this.currentScene.update(elapsed)
     }
 
-    // Render with bloom composer
+    this.glitchPass.uniforms.uTime.value = elapsed
+
     this.composer.render()
   }
 }
