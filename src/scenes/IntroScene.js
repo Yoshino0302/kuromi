@@ -1,16 +1,13 @@
 import * as THREE from 'https://jspm.dev/three'
 export class IntroScene{
-constructor(camera){this.camera=camera;this.scene=new THREE.Scene();this.clock=new THREE.Clock()}
+constructor(camera){this.camera=camera;this.scene=new THREE.Scene();this.clock=new THREE.Clock();this.fireworks=[]}
 init(){
 this.camera.position.set(0,0,26)
-this.scene.background=new THREE.Color(0x080012)
-this.scene.fog=new THREE.FogExp2(0x120018,0.028)
+this.scene.background=new THREE.Color(0x0b0016)
+this.scene.fog=new THREE.FogExp2(0x180028,0.022)
 this.createHeart()
-this.createGlowShell()
-this.createInnerCore()
-this.createAura()
-this.createRings()
-this.createParticles()
+this.createCore()
+this.createSnowLayers()
 this.createLights()
 }
 createHeart(){
@@ -20,108 +17,120 @@ s.bezierCurveTo(0,9,-7,9,-7,2)
 s.bezierCurveTo(-7,-3,0,-6,0,-9)
 s.bezierCurveTo(0,-6,7,-3,7,2)
 s.bezierCurveTo(7,9,0,9,0,5)
-const g=new THREE.ExtrudeGeometry(s,{depth:5.2,bevelEnabled:true,bevelThickness:1.6,bevelSize:1.25,bevelSegments:20,curveSegments:90})
+const g=new THREE.ExtrudeGeometry(s,{depth:6,bevelEnabled:true,bevelThickness:1.8,bevelSize:1.4,bevelSegments:28,curveSegments:120})
 g.center()
 const pos=g.attributes.position
 const cols=[]
 for(let i=0;i<pos.count;i++){
 const y=pos.getY(i)
 const c=new THREE.Color()
-if(y>4)c.set('#ffd6ff')
-else if(y>2)c.set('#ff6ec7')
-else if(y>0)c.set('#ff2a5f')
-else if(y>-2)c.set('#d1007a')
-else if(y>-5)c.set('#7a005f')
-else c.set('#3a003f')
+if(y>5)c.set('#fff0f8')
+else if(y>3)c.set('#ffd1ec')
+else if(y>1)c.set('#ff99d6')
+else if(y>-1)c.set('#ff4fb0')
+else if(y>-3)c.set('#ff1f8a')
+else if(y>-5)c.set('#cc0066')
+else if(y>-7)c.set('#99004d')
+else c.set('#5c0033')
 cols.push(c.r,c.g,c.b)
 }
 g.setAttribute('color',new THREE.Float32BufferAttribute(cols,3))
-const m=new THREE.MeshPhysicalMaterial({vertexColors:true,roughness:0.06,metalness:0.05,clearcoat:1,clearcoatRoughness:0,transmission:0.92,thickness:3.8,ior:1.52,reflectivity:1,emissive:0xff2a8a,emissiveIntensity:2,transparent:true})
+const m=new THREE.MeshPhysicalMaterial({vertexColors:true,roughness:0.12,metalness:0.05,clearcoat:1,clearcoatRoughness:0,transmission:0.92,thickness:4.5,ior:1.52,transparent:true})
 this.heart=new THREE.Mesh(g,m)
 this.scene.add(this.heart)
 }
-createGlowShell(){
-const g=this.heart.geometry.clone()
-const m=new THREE.MeshBasicMaterial({color:0xff4fd8,transparent:true,opacity:0.09,side:THREE.BackSide})
-this.glow=new THREE.Mesh(g,m)
-this.glow.scale.set(1.2,1.2,1.2)
-this.scene.add(this.glow)
-}
-createInnerCore(){
-const g=new THREE.SphereGeometry(3.7,64,64)
-const m=new THREE.MeshBasicMaterial({color:0xff0066,transparent:true,opacity:0.55})
+createCore(){
+const g=new THREE.SphereGeometry(4,64,64)
+const m=new THREE.MeshBasicMaterial({color:0xff66aa,transparent:true,opacity:0.2})
 this.core=new THREE.Mesh(g,m)
 this.scene.add(this.core)
 }
-createAura(){
-const g=new THREE.SphereGeometry(11,64,64)
-const m=new THREE.MeshBasicMaterial({color:0xaa00ff,transparent:true,opacity:0.04,side:THREE.BackSide})
-this.aura=new THREE.Mesh(g,m)
-this.scene.add(this.aura)
-}
-createRings(){
-this.rings=[]
-for(let i=0;i<5;i++){
-const g=new THREE.TorusGeometry(12+i*1.8,0.2,32,800)
-const m=new THREE.MeshBasicMaterial({color:0xff2a8a,transparent:true,opacity:0.4})
-const r=new THREE.Mesh(g,m)
-r.rotation.x=Math.random()*Math.PI
-r.rotation.y=Math.random()*Math.PI
-this.scene.add(r)
-this.rings.push(r)
-}
-}
-createParticles(){
-const count=6000
+createSnowLayers(){
+this.snowLayers=[]
+for(let l=0;l<3;l++){
+const count=2500
 const g=new THREE.BufferGeometry()
 const p=new Float32Array(count*3)
-const c=new Float32Array(count*3)
 for(let i=0;i<count;i++){
-const r=20*Math.random()
-const a=Math.random()*Math.PI*2
-const x=Math.cos(a)*r
-const y=(Math.random()-0.5)*15
-const z=Math.sin(a)*r
-p[i*3]=x
-p[i*3+1]=y
-p[i*3+2]=z
-const col=new THREE.Color()
-if(r<7)col.set('#ff2a5f')
-else if(r<14)col.set('#ff00aa')
-else col.set('#aa00ff')
-c[i*3]=col.r
-c[i*3+1]=col.g
-c[i*3+2]=col.b
+p[i*3]=(Math.random()-0.5)*50
+p[i*3+1]=Math.random()*35
+p[i*3+2]=(Math.random()-0.5)*50
 }
 g.setAttribute('position',new THREE.BufferAttribute(p,3))
-g.setAttribute('color',new THREE.BufferAttribute(c,3))
-const m=new THREE.PointsMaterial({vertexColors:true,size:0.045,transparent:true,opacity:0.75})
-this.particles=new THREE.Points(g,m)
-this.scene.add(this.particles)
+const m=new THREE.PointsMaterial({color:new THREE.Color().setHSL(0.9,0.6,0.8-l*0.1),size:0.06+l*0.03,transparent:true,opacity:0.8-l*0.2})
+const snow=new THREE.Points(g,m)
+this.scene.add(snow)
+this.snowLayers.push({mesh:snow,speed:0.03+l*0.02})
+}
+}
+spawnFirework(){
+const origin=new THREE.Vector3((Math.random()-0.5)*20,-15,(Math.random()-0.5)*20)
+const rocketGeo=new THREE.BufferGeometry()
+const rocketPos=new Float32Array(3)
+rocketPos[0]=origin.x
+rocketPos[1]=origin.y
+rocketPos[2]=origin.z
+rocketGeo.setAttribute('position',new THREE.BufferAttribute(rocketPos,3))
+const rocketMat=new THREE.PointsMaterial({color:0xff99cc,size:0.15})
+const rocket=new THREE.Points(rocketGeo,rocketMat)
+rocket.userData={vy:0.4,life:1,phase:'up'}
+this.scene.add(rocket)
+this.fireworks.push(rocket)
+}
+explode(position){
+const count=300
+const g=new THREE.BufferGeometry()
+const p=new Float32Array(count*3)
+for(let i=0;i<count;i++){
+const dir=new THREE.Vector3((Math.random()-0.5),(Math.random()-0.5),(Math.random()-0.5)).normalize().multiplyScalar(Math.random()*5)
+p[i*3]=position.x+dir.x
+p[i*3+1]=position.y+dir.y
+p[i*3+2]=position.z+dir.z
+}
+g.setAttribute('position',new THREE.BufferAttribute(p,3))
+const col=new THREE.Color().setHSL(0.85+Math.random()*0.1,1,0.6)
+const m=new THREE.PointsMaterial({color:col,size:0.12,transparent:true,opacity:1})
+const burst=new THREE.Points(g,m)
+burst.userData={life:1}
+this.scene.add(burst)
+this.fireworks.push(burst)
 }
 createLights(){
-const l1=new THREE.PointLight(0xff2a5f,20,350)
-l1.position.set(24,20,26)
-const l2=new THREE.PointLight(0xaa00ff,18,320)
-l2.position.set(-24,-18,22)
-const l3=new THREE.PointLight(0xff66ff,12,260)
-l3.position.set(0,28,16)
-this.scene.add(l1,l2,l3)
+const l1=new THREE.PointLight(0xff6699,10,300)
+l1.position.set(20,20,25)
+const l2=new THREE.PointLight(0xff3385,8,250)
+l2.position.set(-20,-15,20)
+this.scene.add(l1,l2)
 }
 update(){
 const t=this.clock.getElapsedTime()
-const beat=1+Math.sin(t*6)*0.09+Math.sin(t*12)*0.05
+const beat=1+Math.sin(t*6)*0.07+Math.sin(t*12)*0.04
 this.heart.scale.set(beat,beat,beat)
-this.glow.scale.set(beat*1.22,beat*1.22,beat*1.22)
-this.core.scale.set(beat*0.78,beat*0.78,beat*0.78)
-this.aura.scale.set(beat*1.3,beat*1.3,beat*1.3)
-const hueShift=(Math.sin(t*0.5)+1)/2
-this.core.material.color.setHSL(0.95-hueShift*0.35,1,0.55)
-this.heart.material.emissive.setHSL(0.98-hueShift*0.4,1,0.6)
-this.rings.forEach((r,i)=>{r.rotation.y+=0.0015+i*0.0007;r.rotation.x+=0.0009;r.material.color.setHSL(0.9+Math.sin(t*0.4+i)*0.1,1,0.55)})
-this.particles.rotation.y+=0.0013
-this.camera.position.x=Math.sin(t*0.35)*2.2
-this.camera.position.y=Math.cos(t*0.28)*1.6
+this.core.scale.set(beat*0.85,beat*0.85,beat*0.85)
+this.heart.rotation.z=Math.sin(t*0.4)*0.05
+this.snowLayers.forEach(layer=>{
+const pos=layer.mesh.geometry.attributes.position
+for(let i=0;i<pos.count;i++){
+let y=pos.getY(i)-layer.speed
+if(y<-20)y=30
+pos.setY(i,y)
+}
+pos.needsUpdate=true
+})
+if(Math.random()<0.02)this.spawnFirework()
+this.fireworks.forEach((fw,i)=>{
+if(fw.userData.phase==='up'){
+fw.position.y+=fw.userData.vy
+fw.userData.vy+=0.01
+if(fw.position.y>Math.random()*10){this.scene.remove(fw);this.fireworks.splice(i,1);this.explode(fw.position.clone())}
+}else{
+fw.material.opacity-=0.02
+fw.userData.life-=0.02
+if(fw.userData.life<=0){this.scene.remove(fw);this.fireworks.splice(i,1)}
+}
+})
+this.camera.position.x=Math.sin(t*0.3)*2
+this.camera.position.y=Math.cos(t*0.25)*1.5
 this.camera.lookAt(0,0,0)
 }
 dispose(){this.scene.clear()}
