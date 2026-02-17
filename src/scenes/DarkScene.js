@@ -1,7 +1,6 @@
 import * as THREE from 'https://jspm.dev/three'
 import { initPortal } from '../effects/portal.js'
 import { initGalaxy } from '../effects/galaxy.js'
-import { AudioEngine } from '../core/AudioEngine.js'
 
 export class DarkScene {
 
@@ -9,7 +8,6 @@ export class DarkScene {
     this.camera = camera
     this.scene = new THREE.Scene()
     this.clock = new THREE.Clock()
-    this.isReady = false
   }
 
   init() {
@@ -32,64 +30,29 @@ export class DarkScene {
 
     // PORTAL
     const portalData = initPortal(this.scene)
-    this.portalUpdate = portalData.update
+    this.portalUpdate = portalData?.update || null
 
     // GALAXY
     const galaxyData = initGalaxy(this.scene)
-    this.galaxyUpdate = galaxyData.update
+    this.galaxyUpdate = galaxyData?.update || null
 
     // LIGHT
     const light = new THREE.PointLight(0xff00aa, 8, 200)
     light.position.set(10, 10, 10)
     this.scene.add(light)
-
-    // AUDIO (load async but không block scene)
-    this.audioEngine = new AudioEngine(this.camera)
-
-    this.audioEngine.load('./assets/cyberpunk.mp3').then(() => {
-      document.addEventListener('click', () => {
-        this.audioEngine.play()
-      })
-    }).catch(() => {
-      console.warn('Audio file not found')
-    })
-
-    // MOUSE
-    this.mouse = new THREE.Vector2()
-
-    window.addEventListener('mousemove', (e) => {
-      this.mouse.x = (e.clientX / window.innerWidth - 0.5) * 20
-      this.mouse.y = (e.clientY / window.innerHeight - 0.5) * 20
-    })
-
-    this.isReady = true
   }
 
   update() {
 
-    if (!this.isReady) return
     if (!this.core) return
 
     const elapsed = this.clock.getElapsedTime()
 
-    if (this.audioEngine) this.audioEngine.update()
+    this.core.rotation.x += 0.01
+    this.core.rotation.y += 0.015
 
-    const bass = this.audioEngine?.data?.bass || 0
-    const avg = this.audioEngine?.data?.average || 0
-
-    // AUDIO REACTIVE CORE
-    const pulse = 1 + bass * 1.5
-    this.core.scale.set(pulse, pulse, pulse)
-
-    this.core.rotation.x += 0.01 + avg * 0.1
-    this.core.rotation.y += 0.015 + avg * 0.1
-
-    if (this.portalUpdate) this.portalUpdate(elapsed + bass * 5)
+    if (this.portalUpdate) this.portalUpdate(elapsed)
     if (this.galaxyUpdate) this.galaxyUpdate(elapsed)
-
-    // CAMERA
-    this.camera.position.x += (this.mouse.x - this.camera.position.x) * 0.05
-    this.camera.position.y += (-this.mouse.y - this.camera.position.y) * 0.05
 
     this.camera.lookAt(0, 0, 0)
   }
