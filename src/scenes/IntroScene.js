@@ -10,90 +10,112 @@ export class IntroScene {
 
   init() {
 
-    this.camera.position.set(0, 0, 28)
-    this.scene.fog = new THREE.FogExp2(0x0a0015, 0.035)
+    this.camera.position.set(0, 0, 26)
+    this.scene.fog = new THREE.FogExp2(0x14001f, 0.04)
 
     this.createHeart()
-    this.createInnerGlow()
+    this.createInnerCore()
+    this.createGlassShell()
     this.createMagicRings()
-    this.createShockwave()
     this.createParticles()
     this.createLights()
   }
 
-  // ===================================
-  // 3D HEART GEOMETRY
-  // ===================================
+  // =================================
+  // HEART BASE
+  // =================================
   createHeart() {
 
-    const heartShape = new THREE.Shape()
+    const shape = new THREE.Shape()
 
-    heartShape.moveTo(0, 5)
-    heartShape.bezierCurveTo(0, 8, -6, 8, -6, 3)
-    heartShape.bezierCurveTo(-6, -2, 0, -5, 0, -8)
-    heartShape.bezierCurveTo(0, -5, 6, -2, 6, 3)
-    heartShape.bezierCurveTo(6, 8, 0, 8, 0, 5)
+    shape.moveTo(0, 5)
+    shape.bezierCurveTo(0, 9, -7, 9, -7, 2)
+    shape.bezierCurveTo(-7, -3, 0, -6, 0, -9)
+    shape.bezierCurveTo(0, -6, 7, -3, 7, 2)
+    shape.bezierCurveTo(7, 9, 0, 9, 0, 5)
 
-    const extrudeSettings = {
-      depth: 4,
+    const geometry = new THREE.ExtrudeGeometry(shape, {
+      depth: 5,
       bevelEnabled: true,
-      bevelThickness: 1,
+      bevelThickness: 1.2,
       bevelSize: 1,
-      bevelSegments: 8,
-      curveSegments: 32
-    }
-
-    const geometry = new THREE.ExtrudeGeometry(heartShape, extrudeSettings)
+      bevelSegments: 10,
+      curveSegments: 40
+    })
 
     geometry.center()
 
     const material = new THREE.MeshPhysicalMaterial({
-      color: 0xff0066,
-      emissive: 0xff0099,
-      emissiveIntensity: 1.8,
-      metalness: 0.2,
-      roughness: 0.25,
+      color: 0xff2a6d,
+      emissive: 0xff0066,
+      emissiveIntensity: 1.5,
+      roughness: 0.3,
+      metalness: 0.15,
       clearcoat: 1,
-      transmission: 0.3,
-      thickness: 1.2
+      transmission: 0.5,
+      thickness: 2,
+      transparent: true
     })
 
     this.heart = new THREE.Mesh(geometry, material)
     this.scene.add(this.heart)
   }
 
-  // ===================================
-  // INNER GLOW CORE
-  // ===================================
-  createInnerGlow() {
+  // =================================
+  // INNER ENERGY CORE
+  // =================================
+  createInnerCore() {
 
-    const geo = new THREE.SphereGeometry(3, 64, 64)
+    const geo = new THREE.SphereGeometry(3.2, 64, 64)
 
     const mat = new THREE.MeshBasicMaterial({
       color: 0xff00cc,
       transparent: true,
-      opacity: 0.25
+      opacity: 0.3
     })
 
-    this.innerGlow = new THREE.Mesh(geo, mat)
-    this.scene.add(this.innerGlow)
+    this.innerCore = new THREE.Mesh(geo, mat)
+    this.scene.add(this.innerCore)
   }
 
-  // ===================================
-  // MAGIC ORBIT RINGS
-  // ===================================
+  // =================================
+  // GLASS OUTER SHELL
+  // =================================
+  createGlassShell() {
+
+    const geo = new THREE.SphereGeometry(7.5, 64, 64)
+
+    const mat = new THREE.MeshPhysicalMaterial({
+      color: 0xff66aa,
+      transmission: 0.9,
+      thickness: 3,
+      roughness: 0,
+      metalness: 0,
+      transparent: true,
+      opacity: 0.15
+    })
+
+    this.shell = new THREE.Mesh(geo, mat)
+    this.scene.add(this.shell)
+  }
+
+  // =================================
+  // MAGIC RINGS (SOFT COLOR MIX)
+  // =================================
   createMagicRings() {
 
     this.rings = []
 
-    for (let i = 0; i < 4; i++) {
+    const colors = [0xff00aa, 0xff66cc, 0xff3399]
 
-      const geo = new THREE.TorusGeometry(10 + i * 1.5, 0.15, 32, 300)
+    for (let i = 0; i < 3; i++) {
+
+      const geo = new THREE.TorusGeometry(11 + i * 1.5, 0.12, 32, 300)
 
       const mat = new THREE.MeshBasicMaterial({
-        color: 0xff00aa,
+        color: colors[i],
         transparent: true,
-        opacity: 0.7
+        opacity: 0.5
       })
 
       const ring = new THREE.Mesh(geo, mat)
@@ -106,38 +128,18 @@ export class IntroScene {
     }
   }
 
-  // ===================================
-  // SHOCKWAVE EFFECT
-  // ===================================
-  createShockwave() {
-
-    const geo = new THREE.RingGeometry(8, 8.5, 64)
-
-    const mat = new THREE.MeshBasicMaterial({
-      color: 0xff00ff,
-      transparent: true,
-      opacity: 0.5,
-      side: THREE.DoubleSide
-    })
-
-    this.shockwave = new THREE.Mesh(geo, mat)
-    this.shockwave.rotation.x = Math.PI / 2
-
-    this.scene.add(this.shockwave)
-  }
-
-  // ===================================
+  // =================================
   // PARTICLE AURA
-  // ===================================
+  // =================================
   createParticles() {
 
-    const count = 2500
+    const count = 2000
     const geometry = new THREE.BufferGeometry()
     const positions = new Float32Array(count * 3)
 
     for (let i = 0; i < count; i++) {
 
-      const r = 14 * Math.random()
+      const r = 15 * Math.random()
       const a = Math.random() * Math.PI * 2
 
       positions[i * 3] = Math.cos(a) * r
@@ -148,61 +150,56 @@ export class IntroScene {
     geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
 
     const material = new THREE.PointsMaterial({
-      color: 0xff00ff,
-      size: 0.08
+      color: 0xff66cc,
+      size: 0.07,
+      transparent: true,
+      opacity: 0.6
     })
 
     this.particles = new THREE.Points(geometry, material)
     this.scene.add(this.particles)
   }
 
-  // ===================================
+  // =================================
   // LIGHTS
-  // ===================================
+  // =================================
   createLights() {
 
-    const l1 = new THREE.PointLight(0xff0099, 8, 200)
+    const l1 = new THREE.PointLight(0xff0066, 8, 200)
     l1.position.set(15, 15, 20)
 
-    const l2 = new THREE.PointLight(0xff00aa, 6, 200)
+    const l2 = new THREE.PointLight(0xff66cc, 6, 200)
     l2.position.set(-15, -10, 15)
 
     this.scene.add(l1)
     this.scene.add(l2)
   }
 
-  // ===================================
-  // UPDATE LOOP
-  // ===================================
+  // =================================
+  // UPDATE (NO ROTATION)
+  // =================================
   update() {
 
     const t = this.clock.getElapsedTime()
 
-    // heart rotation
-    this.heart.rotation.y += 0.01
-    this.heart.rotation.x += 0.004
+    // realistic double heartbeat
+    const beat =
+      1 +
+      Math.sin(t * 6) * 0.05 +
+      Math.sin(t * 12) * 0.03
 
-    // heartbeat pulse
-    const beat = 1 + Math.sin(t * 4) * 0.08
     this.heart.scale.set(beat, beat, beat)
-    this.innerGlow.scale.set(beat, beat, beat)
+    this.innerCore.scale.set(beat * 0.9, beat * 0.9, beat * 0.9)
+    this.shell.scale.set(beat * 1.05, beat * 1.05, beat * 1.05)
 
-    // magic rings rotation
+    // soft ring drift (không quay nhanh)
     this.rings.forEach((ring, i) => {
-      ring.rotation.x += 0.002 + i * 0.0008
-      ring.rotation.y += 0.003 + i * 0.0006
+      ring.rotation.y += 0.001 + i * 0.0003
     })
 
-    // shockwave pulse
-    const shockScale = 1 + Math.sin(t * 3) * 0.2
-    this.shockwave.scale.set(shockScale, shockScale, shockScale)
+    // particle drift
+    this.particles.rotation.y += 0.0008
 
-    // particle swirl
-    this.particles.rotation.y += 0.0015
-
-    // cinematic camera drift
-    this.camera.position.x = Math.sin(t * 0.4) * 2
-    this.camera.position.y = Math.cos(t * 0.3) * 1.5
     this.camera.lookAt(0, 0, 0)
   }
 
