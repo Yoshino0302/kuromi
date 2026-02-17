@@ -1,5 +1,3 @@
-import * as THREE from 'https://jspm.dev/three'
-
 export class SceneManager {
 
   constructor(renderer, camera) {
@@ -10,8 +8,8 @@ export class SceneManager {
 
   setScene(sceneInstance) {
 
-    if (this.currentScene) {
-      this.currentScene.dispose?.()
+    if (this.currentScene?.dispose) {
+      this.currentScene.dispose()
     }
 
     this.currentScene = sceneInstance
@@ -19,7 +17,9 @@ export class SceneManager {
   }
 
   update() {
-    if (this.currentScene?.update) {
+    if (!this.currentScene) return
+
+    if (this.currentScene.update) {
       this.currentScene.update()
     }
 
