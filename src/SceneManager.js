@@ -17,11 +17,12 @@ export class SceneManager {
     this.composer.addPass(this.renderPass)
 
     this.bloomPass = new UnrealBloomPass(
-      new THREE.Vector2(window.innerWidth, window.innerHeight),
-      2.2,
-      1.5,
-      0.05
-    )
+  new THREE.Vector2(window.innerWidth, window.innerHeight),
+  1.2,   // strength
+  0.6,   // radius
+  0.4    // threshold
+)
+
     this.composer.addPass(this.bloomPass)
   }
 
