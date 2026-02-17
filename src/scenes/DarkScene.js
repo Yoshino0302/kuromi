@@ -1,5 +1,7 @@
 import * as THREE from 'https://jspm.dev/three'
 import { initPortal } from '../effects/portal.js'
+import { initGalaxy } from '../effects/galaxy.js'
+import { AudioEngine } from '../core/AudioEngine.js'
 
 export class DarkScene {
 
@@ -9,18 +11,23 @@ export class DarkScene {
     this.clock = new THREE.Clock()
   }
 
-  init() {
+  async init() {
 
-    // ---------- CAMERA ----------
-    this.camera.position.set(0, 0, 35)
+    this.camera.position.set(0, 0, 40)
 
-    // ---------- FOG ----------
-    this.scene.fog = new THREE.FogExp2(0x0a0015, 0.045)
+    this.scene.fog = new THREE.FogExp2(0x0a0015, 0.05)
 
-    // ---------- ENERGY CORE ----------
-    const coreGeo = new THREE.TorusGeometry(8, 2.5, 64, 200)
+    // AUDIO
+    this.audioEngine = new AudioEngine(this.camera)
+    await this.audioEngine.load('./assets/cyberpunk.mp3')
 
-    const coreMat = new THREE.MeshStandardMaterial({
+    document.addEventListener('click', () => {
+      this.audioEngine.play()
+    })
+
+    // CORE
+    const geo = new THREE.TorusGeometry(8, 2.5, 64, 200)
+    const mat = new THREE.MeshStandardMaterial({
       color: 0xff00aa,
       emissive: 0xff0088,
       emissiveIntensity: 4,
@@ -28,101 +35,55 @@ export class DarkScene {
       roughness: 0
     })
 
-    this.core = new THREE.Mesh(coreGeo, coreMat)
+    this.core = new THREE.Mesh(geo, mat)
     this.scene.add(this.core)
 
-    // ---------- INNER GLOW ----------
-    const glowGeo = new THREE.SphereGeometry(5, 64, 64)
-    const glowMat = new THREE.MeshBasicMaterial({
-      color: 0xff00ff
-    })
-
-    this.glowSphere = new THREE.Mesh(glowGeo, glowMat)
-    this.scene.add(this.glowSphere)
-
-    // ---------- PORTAL SHADER ----------
+    // PORTAL
     const portalData = initPortal(this.scene)
-    this.portal = portalData.portal
     this.portalUpdate = portalData.update
 
-    // ---------- FLOATING SHARDS ----------
-    const shardGeo = new THREE.IcosahedronGeometry(0.6, 0)
-    const shardMat = new THREE.MeshStandardMaterial({
-      color: 0xff00aa,
-      emissive: 0xff00aa,
-      emissiveIntensity: 3,
-      metalness: 1,
-      roughness: 0
+    // GALAXY
+    const galaxyData = initGalaxy(this.scene)
+    this.galaxyUpdate = galaxyData.update
+
+    // LIGHT
+    const light = new THREE.PointLight(0xff00aa, 8, 200)
+    light.position.set(10, 10, 10)
+    this.scene.add(light)
+
+    // MOUSE GRAVITY
+    this.mouse = new THREE.Vector2()
+
+    window.addEventListener('mousemove', (e) => {
+      this.mouse.x = (e.clientX / window.innerWidth - 0.5) * 20
+      this.mouse.y = (e.clientY / window.innerHeight - 0.5) * 20
     })
-
-    this.shards = []
-
-    for (let i = 0; i < 60; i++) {
-      const shard = new THREE.Mesh(shardGeo, shardMat)
-
-      const radius = 15 + Math.random() * 10
-      const angle = Math.random() * Math.PI * 2
-
-      shard.position.set(
-        Math.cos(angle) * radius,
-        (Math.random() - 0.5) * 20,
-        Math.sin(angle) * radius
-      )
-
-      shard.userData = {
-        baseRadius: radius,
-        speed: 0.2 + Math.random() * 0.5,
-        offset: Math.random() * Math.PI * 2
-      }
-
-      this.scene.add(shard)
-      this.shards.push(shard)
-    }
-
-    // ---------- LIGHTS ----------
-    const mainLight = new THREE.PointLight(0xff00aa, 8, 200)
-    mainLight.position.set(10, 10, 10)
-    this.scene.add(mainLight)
-
-    const rimLight = new THREE.PointLight(0xff0088, 6, 200)
-    rimLight.position.set(-15, -10, -10)
-    this.scene.add(rimLight)
   }
 
   update() {
 
     const elapsed = this.clock.getElapsedTime()
 
-    // ---------- CORE ROTATION ----------
-    this.core.rotation.x += 0.01
-    this.core.rotation.y += 0.015
+    this.audioEngine.update()
 
-    // ---------- PULSE ----------
-    const pulse = 1 + Math.sin(elapsed * 3) * 0.08
-    this.glowSphere.scale.set(pulse, pulse, pulse)
+    const bass = this.audioEngine.data.bass
+    const avg = this.audioEngine.data.average
 
-    // ---------- PORTAL UPDATE ----------
-    if (this.portalUpdate) {
-      this.portalUpdate(elapsed)
-    }
+    // AUDIO REACTIVE CORE
+    const pulse = 1 + bass * 1.5
+    this.core.scale.set(pulse, pulse, pulse)
 
-    // ---------- SHARDS ORBIT ----------
-    this.shards.forEach((shard) => {
-      const { baseRadius, speed, offset } = shard.userData
+    this.core.rotation.x += 0.01 + avg * 0.1
+    this.core.rotation.y += 0.015 + avg * 0.1
 
-      const angle = elapsed * speed + offset
-      const radius = baseRadius
+    // UPDATE PORTAL + GALAXY
+    if (this.portalUpdate) this.portalUpdate(elapsed + bass * 5)
+    if (this.galaxyUpdate) this.galaxyUpdate(elapsed)
 
-      shard.position.x = Math.cos(angle) * radius
-      shard.position.z = Math.sin(angle) * radius
+    // CAMERA FOLLOW MOUSE
+    this.camera.position.x += (this.mouse.x - this.camera.position.x) * 0.05
+    this.camera.position.y += (-this.mouse.y - this.camera.position.y) * 0.05
 
-      shard.rotation.x += 0.02
-      shard.rotation.y += 0.03
-    })
-
-    // ---------- CINEMATIC CAMERA ----------
-    this.camera.position.x = Math.sin(elapsed * 0.3) * 3
-    this.camera.position.y = Math.cos(elapsed * 0.2) * 2
     this.camera.lookAt(0, 0, 0)
   }
 
