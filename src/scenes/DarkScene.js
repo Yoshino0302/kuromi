@@ -10,29 +10,28 @@ export class DarkScene {
 
   init() {
 
-    this.camera.position.set(0, 0, 35)
-    this.scene.fog = new THREE.FogExp2(0x0a0015, 0.03)
+    this.camera.position.set(0, 0, 45)
+    this.scene.fog = new THREE.FogExp2(0x080012, 0.025)
 
-    this.createEnergyCore()
-    this.createOrbitRings()
-    this.createCrystalPortal()
+    this.createReactorCore()
+    this.createHexPortal()
+    this.createEnergyVortex()
     this.createLights()
   }
 
-  // ===============================
-  // ENERGY CORE
-  // ===============================
-  createEnergyCore() {
+  // =========================
+  // REACTOR CORE
+  // =========================
+  createReactorCore() {
 
-    const geo = new THREE.IcosahedronGeometry(6, 3)
+    const geo = new THREE.SphereGeometry(6, 128, 128)
 
     const mat = new THREE.MeshPhysicalMaterial({
-      color: 0xff00aa,
-      emissive: 0xff00aa,
-      emissiveIntensity: 1.8,
-      metalness: 0.3,
-      roughness: 0.2,
-      clearcoat: 1,
+      color: 0xff0099,
+      emissive: 0xff00cc,
+      emissiveIntensity: 2,
+      metalness: 0.2,
+      roughness: 0,
       transmission: 0.6,
       thickness: 1.5,
       transparent: true
@@ -41,105 +40,116 @@ export class DarkScene {
     this.core = new THREE.Mesh(geo, mat)
     this.scene.add(this.core)
 
-    // inner glow
-    const innerGeo = new THREE.SphereGeometry(3.5, 64, 64)
-    const innerMat = new THREE.MeshBasicMaterial({
-      color: 0xff00ff
+    // outer glow shell
+    const shellGeo = new THREE.SphereGeometry(7.5, 64, 64)
+    const shellMat = new THREE.MeshBasicMaterial({
+      color: 0xff00ff,
+      transparent: true,
+      opacity: 0.15
     })
 
-    this.innerCore = new THREE.Mesh(innerGeo, innerMat)
-    this.scene.add(this.innerCore)
+    this.shell = new THREE.Mesh(shellGeo, shellMat)
+    this.scene.add(this.shell)
   }
 
-  // ===============================
-  // ORBIT RINGS
-  // ===============================
-  createOrbitRings() {
+  // =========================
+  // HEX PORTAL FRAME
+  // =========================
+  createHexPortal() {
 
-    this.rings = []
+    this.portalRings = []
 
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < 6; i++) {
 
-      const ringGeo = new THREE.TorusGeometry(10 + i * 2, 0.15, 32, 200)
-      const ringMat = new THREE.MeshBasicMaterial({
+      const geo = new THREE.TorusGeometry(14 + i * 1.2, 0.2, 32, 300)
+
+      const mat = new THREE.MeshBasicMaterial({
         color: 0xff00aa
       })
 
-      const ring = new THREE.Mesh(ringGeo, ringMat)
+      const ring = new THREE.Mesh(geo, mat)
+
       ring.rotation.x = Math.random() * Math.PI
       ring.rotation.y = Math.random() * Math.PI
 
       this.scene.add(ring)
-      this.rings.push(ring)
+      this.portalRings.push(ring)
     }
   }
 
-  // ===============================
-  // CRYSTAL PORTAL
-  // ===============================
-  createCrystalPortal() {
+  // =========================
+  // ENERGY VORTEX PARTICLES
+  // =========================
+  createEnergyVortex() {
 
-    const geo = new THREE.IcosahedronGeometry(12, 1)
+    const count = 4000
+    const geometry = new THREE.BufferGeometry()
+    const positions = new Float32Array(count * 3)
 
-    const mat = new THREE.MeshPhysicalMaterial({
-      color: 0xff66cc,
-      emissive: 0xff0088,
-      emissiveIntensity: 0.8,
-      transmission: 0.9,
-      thickness: 2,
-      metalness: 0.1,
-      roughness: 0,
-      transparent: true
+    for (let i = 0; i < count; i++) {
+
+      const radius = 20 * Math.random()
+      const angle = Math.random() * Math.PI * 2
+
+      positions[i * 3] = Math.cos(angle) * radius
+      positions[i * 3 + 1] = (Math.random() - 0.5) * 5
+      positions[i * 3 + 2] = Math.sin(angle) * radius
+    }
+
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+
+    const material = new THREE.PointsMaterial({
+      color: 0xff00ff,
+      size: 0.08
     })
 
-    this.portal = new THREE.Mesh(geo, mat)
-    this.portal.position.z = -15
-    this.scene.add(this.portal)
+    this.vortex = new THREE.Points(geometry, material)
+    this.scene.add(this.vortex)
   }
 
-  // ===============================
+  // =========================
   // LIGHTS
-  // ===============================
+  // =========================
   createLights() {
 
-    const light1 = new THREE.PointLight(0xff00aa, 6, 200)
-    light1.position.set(20, 20, 20)
+    const l1 = new THREE.PointLight(0xff00aa, 8, 200)
+    l1.position.set(20, 20, 20)
 
-    const light2 = new THREE.PointLight(0xff0088, 6, 200)
-    light2.position.set(-20, -10, 10)
+    const l2 = new THREE.PointLight(0xff0088, 8, 200)
+    l2.position.set(-20, -15, 15)
 
-    this.scene.add(light1)
-    this.scene.add(light2)
+    this.scene.add(l1)
+    this.scene.add(l2)
   }
 
-  // ===============================
+  // =========================
   // UPDATE LOOP
-  // ===============================
+  // =========================
   update() {
 
-    const elapsed = this.clock.getElapsedTime()
+    const t = this.clock.getElapsedTime()
 
-    // core rotation
-    this.core.rotation.x += 0.01
-    this.core.rotation.y += 0.015
+    // core spin
+    this.core.rotation.y += 0.01
+    this.core.rotation.x += 0.006
 
     // breathing pulse
-    const pulse = 1 + Math.sin(elapsed * 2) * 0.05
+    const pulse = 1 + Math.sin(t * 3) * 0.06
     this.core.scale.set(pulse, pulse, pulse)
+    this.shell.scale.set(pulse, pulse, pulse)
 
-    // inner distortion effect
-    this.innerCore.rotation.y += 0.02
-
-    // orbit rings rotation
-    this.rings.forEach((ring, i) => {
-      ring.rotation.x += 0.005 + i * 0.002
-      ring.rotation.y += 0.004 + i * 0.002
+    // portal rings rotation
+    this.portalRings.forEach((ring, i) => {
+      ring.rotation.x += 0.002 + i * 0.0008
+      ring.rotation.y += 0.003 + i * 0.0006
     })
 
-    // portal slow spin
-    this.portal.rotation.y += 0.003
-    this.portal.rotation.x += 0.002
+    // vortex spin
+    this.vortex.rotation.y += 0.0015
 
+    // subtle camera motion
+    this.camera.position.x = Math.sin(t * 0.3) * 3
+    this.camera.position.y = Math.cos(t * 0.2) * 2
     this.camera.lookAt(0, 0, 0)
   }
 
