@@ -5,8 +5,13 @@ import { DarkScene } from './scenes/DarkScene.js'
 
 const canvas = document.getElementById('bg')
 
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true })
+const renderer = new THREE.WebGLRenderer({
+  canvas,
+  antialias: true
+})
+
 renderer.setSize(window.innerWidth, window.innerHeight)
+renderer.setPixelRatio(window.devicePixelRatio)
 
 const camera = new THREE.PerspectiveCamera(
   75,
@@ -15,14 +20,25 @@ const camera = new THREE.PerspectiveCamera(
   1000
 )
 
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight
+  camera.updateProjectionMatrix()
+  renderer.setSize(window.innerWidth, window.innerHeight)
+})
+
 const manager = new SceneManager(renderer, camera)
 
-const intro = new IntroScene(camera)
-manager.setScene(intro)
+const introScene = new IntroScene(camera)
+manager.setScene(introScene)
 
 document.getElementById('enterBtn').addEventListener('click', () => {
-  const dark = new DarkScene(camera)
-  manager.setScene(dark)
+
+  const darkScene = new DarkScene(camera)
+
+  // Ẩn UI
+  document.querySelector('.overlay').style.display = 'none'
+
+  manager.setScene(darkScene)
 })
 
 function animate() {
