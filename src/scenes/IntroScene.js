@@ -1,303 +1,239 @@
 import * as THREE from 'https://jspm.dev/three'
-export class IntroScene{
-constructor(camera){
-this.camera=camera
-this.scene=new THREE.Scene()
+
+class IntroSceneV2{
+constructor(){
+this.container=document.body
 this.clock=new THREE.Clock()
-this.phase='intro'
-this.phaseTime=0
+this.scene=new THREE.Scene()
+this.camera=new THREE.PerspectiveCamera(60,window.innerWidth/window.innerHeight,0.1,2000)
+this.camera.position.set(0,2,12)
+this.renderer=new THREE.WebGLRenderer({antialias:true,alpha:false,powerPreference:'high-performance'})
+this.renderer.setSize(window.innerWidth,window.innerHeight)
+this.renderer.setPixelRatio(Math.min(2,window.devicePixelRatio))
+this.renderer.outputColorSpace=THREE.SRGBColorSpace
+this.renderer.toneMapping=THREE.ACESFilmicToneMapping
+this.renderer.toneMappingExposure=1.2
+this.container.appendChild(this.renderer.domElement)
+window.addEventListener('resize',()=>this.onResize())
 this.fps=60
-this.frame=0
-this.adaptive=1
-this.tmpVec=new THREE.Vector3()
-this.rockets=[]
-this.bursts=[]
-this.trails=[]
-this.burstPool=[]
-this.trailPool=[]
-this.snow=[]
-this.galaxyRotation=0
-}
-init(){
-this.camera.position.set(0,0,75)
-this.scene.background=new THREE.Color(0x130018)
-this.scene.fog=new THREE.FogExp2(0x1a0030,0.009)
-this.createLights()
+this.frameCount=0
+this.fpsTimer=0
+this.densityFactor=1
+this.initLights()
+this.createGradientSky()
 this.createHeart()
-this.createCore()
-this.createInnerGlow()
-this.createOuterAura()
-this.createGalaxy()
-this.createSnow()
-this.createDust()
-this.initFireworkPools()
+this.animate()
 }
-createLights(){
-const amb=new THREE.AmbientLight(0xffffff,0.55)
-const key=new THREE.DirectionalLight(0xff66cc,1.6)
-key.position.set(30,30,45)
-const rim=new THREE.DirectionalLight(0xffffff,3.2)
-rim.position.set(0,0,70)
-this.scene.add(amb,key,rim)
+initLights(){
+this.ambient=new THREE.AmbientLight(0xff66aa,0.8)
+this.scene.add(this.ambient)
+this.dir=new THREE.DirectionalLight(0xff3377,1.2)
+this.dir.position.set(5,10,7)
+this.scene.add(this.dir)
+}
+createGradientSky(){
+const geo=new THREE.SphereGeometry(500,64,64)
+const mat=new THREE.ShaderMaterial({
+side:THREE.BackSide,
+uniforms:{uTime:{value:0}},
+vertexShader:`varying vec3 vPos;void main(){vPos=position;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}`,
+fragmentShader:`varying vec3 vPos;void main(){float h=normalize(vPos).y;vec3 c1=vec3(0.35,0.0,0.4);vec3 c2=vec3(0.8,0.0,0.3);vec3 c3=vec3(1.0,0.3,0.6);vec3 col=mix(c1,c2,smoothstep(-0.2,0.5,h));col=mix(col,c3,pow(max(h,0.0),3.0));gl_FragColor=vec4(col,1.0);}`
+})
+this.sky=new THREE.Mesh(geo,mat)
+this.scene.add(this.sky)
 }
 createHeart(){
-const s=new THREE.Shape()
-s.moveTo(0,5)
-s.bezierCurveTo(0,8,-6,8,-6,2)
-s.bezierCurveTo(-6,-2,0,-5,0,-8)
-s.bezierCurveTo(0,-5,6,-2,6,2)
-s.bezierCurveTo(6,8,0,8,0,5)
-const g=new THREE.ExtrudeGeometry(s,{depth:5,bevelEnabled:true,bevelThickness:1.3,bevelSize:1.2,bevelSegments:20,curveSegments:80})
-g.center()
-const pos=g.attributes.position
-const cols=[]
-for(let i=0;i<pos.count;i++){
-const y=pos.getY(i)
-const c=new THREE.Color()
-if(y>3)c.set('#ffffff')
-else if(y>1)c.set('#ff9ee0')
-else if(y>-1)c.set('#ff4db8')
-else if(y>-3)c.set('#c0007a')
-else c.set('#5a0033')
-cols.push(c.r,c.g,c.b)
-}
-g.setAttribute('color',new THREE.Float32BufferAttribute(cols,3))
-const m=new THREE.MeshStandardMaterial({vertexColors:true,roughness:0.22,metalness:0.4})
-this.heart=new THREE.Mesh(g,m)
+const shape=new THREE.Shape()
+shape.moveTo(0,0)
+shape.bezierCurveTo(0,3,-4,3,-4,0)
+shape.bezierCurveTo(-4,-3,0,-5,0,-7)
+shape.bezierCurveTo(0,-5,4,-3,4,0)
+shape.bezierCurveTo(4,3,0,3,0,0)
+const geo=new THREE.ExtrudeGeometry(shape,{depth:2,bevelEnabled:true,bevelSegments:6,steps:2,bevelSize:0.4,bevelThickness:0.6})
+geo.center()
+const mat=new THREE.MeshStandardMaterial({color:0xff2a6d,emissive:0x550022,roughness:0.3,metalness:0.1})
+this.heart=new THREE.Mesh(geo,mat)
+this.heart.scale.set(0.7,0.7,0.7)
 this.scene.add(this.heart)
-}
-createCore(){
-const g=new THREE.SphereGeometry(5,96,96)
-const m=new THREE.ShaderMaterial({
-transparent:true,
-uniforms:{time:{value:0}},
-vertexShader:`varying vec3 vPos;void main(){vPos=position;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}`,
-fragmentShader:`uniform float time;varying vec3 vPos;void main(){float r=length(vPos);float wave=0.5+0.5*sin(r*12.0-time*6.0);vec3 col=mix(vec3(1.0,0.3,0.6),vec3(0.6,0.0,1.0),wave);gl_FragColor=vec4(col,0.35);}`
-})
-this.core=new THREE.Mesh(g,m)
-this.scene.add(this.core)
-}
-createInnerGlow(){
-const g=new THREE.SphereGeometry(8,64,64)
-const m=new THREE.ShaderMaterial({
-transparent:true,
-blending:THREE.AdditiveBlending,
-depthWrite:false,
-uniforms:{time:{value:0}},
-vertexShader:`varying vec3 vPos;void main(){vPos=position;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}`,
-fragmentShader:`uniform float time;varying vec3 vPos;void main(){float d=length(vPos)/8.0;float pulse=0.6+0.4*sin(time*3.0);float glow=smoothstep(1.0,0.25,d);vec3 col=vec3(1.0,0.2,0.7);gl_FragColor=vec4(col,glow*0.6*pulse);}`
-})
-this.innerGlow=new THREE.Mesh(g,m)
-this.scene.add(this.innerGlow)
-}
-createOuterAura(){
-const g=new THREE.SphereGeometry(16,48,48)
-const m=new THREE.ShaderMaterial({
-transparent:true,
-blending:THREE.AdditiveBlending,
-depthWrite:false,
-uniforms:{time:{value:0}},
-vertexShader:`varying vec3 vPos;void main(){vPos=position;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}`,
-fragmentShader:`uniform float time;varying vec3 vPos;void main(){float d=length(vPos)/16.0;float ring=smoothstep(1.0,0.5,d);float pulse=0.5+0.5*sin(time*1.5);vec3 col=vec3(0.8,0.1,1.0);gl_FragColor=vec4(col,ring*0.35*pulse);}`
-})
-this.outerAura=new THREE.Mesh(g,m)
-this.scene.add(this.outerAura)
-}
-createGalaxy(){
-const count=10000
-const g=new THREE.BufferGeometry()
-const arr=new Float32Array(count*3)
-for(let i=0;i<count;i++){
-const r=Math.random()*120
-const a=r*0.15+Math.random()*0.8
-arr[i*3]=Math.cos(a)*r
-arr[i*3+1]=(Math.random()-0.5)*80
-arr[i*3+2]=Math.sin(a)*r
-}
-g.setAttribute('position',new THREE.BufferAttribute(arr,3))
-const m=new THREE.PointsMaterial({color:0xff66cc,size:0.14,transparent:true,opacity:0.75})
-this.galaxy=new THREE.Points(g,m)
-this.scene.add(this.galaxy)
+this.beatTime=0
 }
 createSnow(){
-for(let l=0;l<3;l++){
-const count=2500
-const g=new THREE.BufferGeometry()
-const arr=new Float32Array(count*3)
-for(let i=0;i<count;i++){
-arr[i*3]=(Math.random()-0.5)*100
-arr[i*3+1]=Math.random()*70
-arr[i*3+2]=(Math.random()-0.5)*100
+this.snowCount=1500
+const geo=new THREE.BufferGeometry()
+const pos=new Float32Array(this.snowCount*3)
+for(let i=0;i<this.snowCount;i++){
+pos[i*3]=(Math.random()-0.5)*200
+pos[i*3+1]=Math.random()*100
+pos[i*3+2]=(Math.random()-0.5)*200
 }
-g.setAttribute('position',new THREE.BufferAttribute(arr,3))
-const m=new THREE.PointsMaterial({color:new THREE.Color().setHSL(0.9,0.6,0.9-l*0.2),size:0.06+l*0.04,transparent:true,opacity:0.85-l*0.3})
-const snow=new THREE.Points(g,m)
-this.scene.add(snow)
-this.snow.push({mesh:snow,speed:0.025+l*0.02})
-}
-}
-createDust(){
-const count=3000
-const g=new THREE.BufferGeometry()
-const arr=new Float32Array(count*3)
-for(let i=0;i<count;i++){
-const r=16+Math.random()*10
-const a=Math.random()*Math.PI*2
-arr[i*3]=Math.cos(a)*r
-arr[i*3+1]=(Math.random()-0.5)*14
-arr[i*3+2]=Math.sin(a)*r
-}
-g.setAttribute('position',new THREE.BufferAttribute(arr,3))
-const m=new THREE.PointsMaterial({color:0xff99cc,size:0.1,transparent:true,opacity:0.65})
-this.dust=new THREE.Points(g,m)
-this.scene.add(this.dust)
-}
-initFireworkPools(){
-for(let i=0;i<30;i++){
-const g=new THREE.BufferGeometry()
-g.setAttribute('position',new THREE.BufferAttribute(new Float32Array(800*3),3))
-const m=new THREE.PointsMaterial({color:0xff66cc,size:0.18,transparent:true,opacity:1})
-const burst=new THREE.Points(g,m)
-burst.visible=false
-burst.userData={life:0,vel:null}
-this.scene.add(burst)
-this.burstPool.push(burst)
-}
-}
-launchRocket(){
-if(this.burstPool.length===0)return
-const rocket={
-pos:new THREE.Vector3((Math.random()-0.5)*60,-40,(Math.random()-0.5)*40),
-vel:new THREE.Vector3((Math.random()-0.5)*0.6,2.8+Math.random()*1.4,(Math.random()-0.5)*0.6),
-life:0,
-targetY:15+Math.random()*25
-}
-this.rockets.push(rocket)
-}
-spawnTrail(position){
-if(this.trailPool.length<200){
-const g=new THREE.BufferGeometry()
-g.setAttribute('position',new THREE.BufferAttribute(new Float32Array([position.x,position.y,position.z]),3))
-const m=new THREE.PointsMaterial({color:0xff99dd,size:0.25,transparent:true,opacity:0.9})
-const p=new THREE.Points(g,m)
-p.userData={life:1}
-this.scene.add(p)
-this.trailPool.push(p)
-}else{
-const p=this.trailPool[this.frame%this.trailPool.length]
-p.position.copy(position)
-p.material.opacity=1
-p.userData.life=1
-}
-}
-explode(position){
-if(this.burstPool.length===0)return
-const burst=this.burstPool.pop()
-const count=800
-const posArr=new Float32Array(count*3)
-const velArr=[]
-for(let i=0;i<count;i++){
-const theta=Math.random()*Math.PI*2
-const phi=Math.random()*Math.PI
-const speed=1+Math.random()*2.5
-const vx=Math.sin(phi)*Math.cos(theta)*speed
-const vy=Math.cos(phi)*speed
-const vz=Math.sin(phi)*Math.sin(theta)*speed
-velArr.push(new THREE.Vector3(vx,vy,vz))
-posArr[i*3]=position.x
-posArr[i*3+1]=position.y
-posArr[i*3+2]=position.z
-}
-burst.geometry.setAttribute('position',new THREE.BufferAttribute(posArr,3))
-burst.userData.vel=velArr
-burst.userData.life=1.2
-burst.visible=true
-this.bursts.push(burst)
-}
-updateFireworks(dt){
-if(Math.random()<0.08*this.adaptive)this.launchRocket()
-for(let i=this.rockets.length-1;i>=0;i--){
-const r=this.rockets[i]
-r.life+=dt
-r.pos.addScaledVector(r.vel,dt*60)
-this.spawnTrail(r.pos)
-if(r.pos.y>=r.targetY){
-this.explode(r.pos.clone())
-this.rockets.splice(i,1)
-}
-}
-for(let i=this.bursts.length-1;i>=0;i--){
-const b=this.bursts[i]
-b.userData.life-=dt
-const pos=b.geometry.attributes.position
-for(let j=0;j<pos.count;j++){
-const v=b.userData.vel[j]
-v.multiplyScalar(0.96)
-pos.array[j*3]+=v.x
-pos.array[j*3+1]+=v.y
-pos.array[j*3+2]+=v.z
-}
-pos.needsUpdate=true
-b.material.opacity=b.userData.life
-if(b.userData.life<=0){
-b.visible=false
-this.burstPool.push(b)
-this.bursts.splice(i,1)
-}
-}
-for(let i=0;i<this.trailPool.length;i++){
-const t=this.trailPool[i]
-t.userData.life-=dt*1.8
-t.material.opacity=t.userData.life
-if(t.userData.life<=0)t.material.opacity=0
-}
+geo.setAttribute('position',new THREE.BufferAttribute(pos,3))
+const mat=new THREE.PointsMaterial({color:0xffb6ff,size:0.6,transparent:true,opacity:0.8,depthWrite:false})
+this.snow=new THREE.Points(geo,mat)
+this.scene.add(this.snow)
 }
 updateSnow(dt){
-for(let i=0;i<this.snow.length;i++){
-const s=this.snow[i]
-const pos=s.mesh.geometry.attributes.position
-for(let j=0;j<pos.count;j++){
-pos.array[j*3+1]-=s.speed*60*dt
-if(pos.array[j*3+1]<-40)pos.array[j*3+1]=50
+const arr=this.snow.geometry.attributes.position.array
+for(let i=0;i<this.snowCount;i++){
+arr[i*3+1]-=dt*10
+if(arr[i*3+1]<-10)arr[i*3+1]=100
 }
-pos.needsUpdate=true
+this.snow.geometry.attributes.position.needsUpdate=true
+}
+createDust(){
+this.dustCount=2000
+const geo=new THREE.BufferGeometry()
+const pos=new Float32Array(this.dustCount*3)
+for(let i=0;i<this.dustCount;i++){
+pos[i*3]=(Math.random()-0.5)*100
+pos[i*3+1]=(Math.random()-0.5)*50
+pos[i*3+2]=(Math.random()-0.5)*100
+}
+geo.setAttribute('position',new THREE.BufferAttribute(pos,3))
+const mat=new THREE.PointsMaterial({color:0xff77aa,size:0.3,transparent:true,opacity:0.6})
+this.dust=new THREE.Points(geo,mat)
+this.scene.add(this.dust)
+}
+updateDust(t){
+this.dust.rotation.y=t*0.02
+this.dust.rotation.x=t*0.01
+}
+createGalaxy(){
+this.galaxyCount=6000
+const geo=new THREE.BufferGeometry()
+const pos=new Float32Array(this.galaxyCount*3)
+const colors=new Float32Array(this.galaxyCount*3)
+for(let i=0;i<this.galaxyCount;i++){
+const r=Math.random()*150
+const branch=i%5
+const angle=branch/5*Math.PI*2+r*0.05
+pos[i*3]=Math.cos(angle)*r+(Math.random()-0.5)*5
+pos[i*3+1]=(Math.random()-0.5)*20
+pos[i*3+2]=Math.sin(angle)*r+(Math.random()-0.5)*5
+const color=new THREE.Color().setHSL(0.9-Math.random()*0.2,0.8,0.6)
+colors[i*3]=color.r
+colors[i*3+1]=color.g
+colors[i*3+2]=color.b
+}
+geo.setAttribute('position',new THREE.BufferAttribute(pos,3))
+geo.setAttribute('color',new THREE.BufferAttribute(colors,3))
+const mat=new THREE.PointsMaterial({size:0.7,vertexColors:true,transparent:true,opacity:0.9,depthWrite:false})
+this.galaxy=new THREE.Points(geo,mat)
+this.scene.add(this.galaxy)
+}
+updateGalaxy(t){
+this.galaxy.rotation.y=t*0.01
+}
+createFireworks(){
+this.fireworks=[]
+this.fireworkPool=200
+}
+spawnFirework(){
+const patterns=['sphere','ring','spiral','burst']
+const type=patterns[Math.floor(Math.random()*patterns.length)]
+const count=Math.floor(200*this.densityFactor)
+const geo=new THREE.BufferGeometry()
+const pos=new Float32Array(count*3)
+const vel=[]
+for(let i=0;i<count;i++){
+let dir=new THREE.Vector3()
+if(type==='sphere'){dir.set(Math.random()*2-1,Math.random()*2-1,Math.random()*2-1).normalize()}
+if(type==='ring'){const a=Math.random()*Math.PI*2;dir.set(Math.cos(a),0,Math.sin(a))}
+if(type==='spiral'){const a=i/count*Math.PI*10;dir.set(Math.cos(a),i/count,Math.sin(a))}
+if(type==='burst'){dir.set(Math.random()*2-1,Math.random()*2-1,Math.random()*2-1)}
+pos[i*3]=0
+pos[i*3+1]=0
+pos[i*3+2]=0
+vel.push(dir.multiplyScalar(Math.random()*20+20))
+}
+geo.setAttribute('position',new THREE.BufferAttribute(pos,3))
+const mat=new THREE.PointsMaterial({color:new THREE.Color().setHSL(Math.random(),1,0.6),size:0.8,transparent:true,opacity:1,depthWrite:false})
+const points=new THREE.Points(geo,mat)
+points.position.set((Math.random()-0.5)*40,Math.random()*20+5,(Math.random()-0.5)*40)
+this.scene.add(points)
+this.fireworks.push({points,vel,life:2})
+}
+updateFireworks(dt){
+for(let i=this.fireworks.length-1;i>=0;i--){
+const fw=this.fireworks[i]
+const arr=fw.points.geometry.attributes.position.array
+for(let j=0;j<fw.vel.length;j++){
+arr[j*3]+=fw.vel[j].x*dt
+arr[j*3+1]+=fw.vel[j].y*dt
+arr[j*3+2]+=fw.vel[j].z*dt
+fw.vel[j].y-=9.8*dt*0.5
+}
+fw.points.geometry.attributes.position.needsUpdate=true
+fw.life-=dt
+fw.points.material.opacity=fw.life/2
+if(fw.life<=0){
+this.scene.remove(fw.points)
+this.fireworks.splice(i,1)
 }
 }
-updateGalaxy(dt){
-this.galaxyRotation+=dt*0.15
-this.galaxy.rotation.y=this.galaxyRotation
+if(Math.random()<0.4*this.densityFactor)this.spawnFirework()
 }
-updateHeart(t){
-const beat=1+Math.sin(t*6)*0.05+Math.sin(t*12)*0.02
-this.heart.scale.set(beat,beat,beat)
-this.core.material.uniforms.time.value=t
-this.innerGlow.material.uniforms.time.value=t
-this.outerAura.material.uniforms.time.value=t
+createShockwave(){
+this.shockwaves=[]
 }
-updateCamera(t){
-this.camera.position.x=Math.sin(t*0.25)*6
-this.camera.position.y=Math.cos(t*0.18)*3
-this.camera.lookAt(0,0,0)
+spawnShockwave(pos){
+const geo=new THREE.RingGeometry(0.5,0.7,64)
+const mat=new THREE.MeshBasicMaterial({color:0xff66aa,transparent:true,opacity:0.6,side:THREE.DoubleSide})
+const mesh=new THREE.Mesh(geo,mat)
+mesh.position.copy(pos)
+mesh.rotation.x=-Math.PI/2
+this.scene.add(mesh)
+this.shockwaves.push({mesh,life:1})
 }
-updateAdaptive(dt){
-this.frame++
-if(this.frame%30===0){
-this.fps=1/dt
-if(this.fps<45)this.adaptive=Math.max(0.6,this.adaptive-0.1)
-if(this.fps>58)this.adaptive=Math.min(1.2,this.adaptive+0.05)
+updateShockwave(dt){
+for(let i=this.shockwaves.length-1;i>=0;i--){
+const s=this.shockwaves[i]
+s.mesh.scale.multiplyScalar(1+dt*5)
+s.mesh.material.opacity-=dt
+s.life-=dt
+if(s.life<=0){
+this.scene.remove(s.mesh)
+this.shockwaves.splice(i,1)
 }
 }
-update(){
+}
+updateFPS(dt){
+this.frameCount++
+this.fpsTimer+=dt
+if(this.fpsTimer>=1){
+this.fps=this.frameCount
+this.frameCount=0
+this.fpsTimer=0
+if(this.fps<45)this.densityFactor=Math.max(0.4,this.densityFactor-0.1)
+if(this.fps>55)this.densityFactor=Math.min(1.5,this.densityFactor+0.1)
+}
+}
+initAll(){
+this.createSnow()
+this.createDust()
+this.createGalaxy()
+this.createFireworks()
+this.createShockwave()
+}
+animate(){
+requestAnimationFrame(()=>this.animate())
 const dt=this.clock.getDelta()
-const t=this.clock.getElapsedTime()
-this.updateAdaptive(dt)
-this.updateHeart(t)
-this.updateGalaxy(dt)
+const t=this.clock.elapsedTime
+this.updateFPS(dt)
+this.beatTime+=dt*3
+const beatScale=1+Math.sin(this.beatTime)*0.08
+this.heart.scale.set(beatScale,beatScale,beatScale)
 this.updateSnow(dt)
+this.updateDust(t)
+this.updateGalaxy(t)
 this.updateFireworks(dt)
-this.updateCamera(t)
+this.updateShockwave(dt)
+this.renderer.render(this.scene,this.camera)
 }
-dispose(){
-this.scene.clear()
+onResize(){
+this.camera.aspect=window.innerWidth/window.innerHeight
+this.camera.updateProjectionMatrix()
+this.renderer.setSize(window.innerWidth,window.innerHeight)
 }
 }
+const intro=new IntroSceneV2()
+intro.initAll()
