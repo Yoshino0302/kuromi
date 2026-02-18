@@ -3,19 +3,48 @@ import * as THREE from 'https://jspm.dev/three'
 export class IntroScene {
 
 constructor(camera){
+
 this.camera=camera
 this.scene=new THREE.Scene()
 
+/* =========================
+   CORE TIMING
+========================= */
+
 this.clock=new THREE.Clock()
-this.beatTime=0
+this.elapsedTime=0
+
+/* =========================
+   PERFORMANCE CONFIG
+========================= */
+
+this.GRAVITY=9.8*0.5
+this.MAX_FIREWORKS=12
+
+this.fireworkSpawnAccumulator=0
+this.fireworkSpawnRate=0.4
+
+/* =========================
+   FPS SYSTEM
+========================= */
 
 this.densityFactor=1
 this.frameCount=0
 this.fpsTimer=0
 this.fps=60
 
+/* =========================
+   SYSTEM STATES
+========================= */
+
 this.fireworks=[]
 this.shockwaves=[]
+
+/* =========================
+   REUSABLE OBJECTS
+========================= */
+
+this._tempColor=new THREE.Color()
 }
 
 init(){
@@ -29,17 +58,27 @@ this.createFireworks()
 this.createShockwave()
 }
 
-initLights(){
-this.ambient=new THREE.AmbientLight(0xff66aa,0.8)
-this.scene.add(this.ambient)
+/* =========================
+   LIGHTS
+========================= */
 
-this.dir=new THREE.DirectionalLight(0xff3377,1.2)
-this.dir.position.set(5,10,7)
-this.scene.add(this.dir)
+initLights(){
+
+this.ambientLight=new THREE.AmbientLight(0xff66aa,0.8)
+this.scene.add(this.ambientLight)
+
+this.directionalLight=new THREE.DirectionalLight(0xff3377,1.2)
+this.directionalLight.position.set(5,10,7)
+this.scene.add(this.directionalLight)
 }
 
+/* =========================
+   SKY
+========================= */
+
 createGradientSky(){
-const geo=new THREE.SphereGeometry(500,64,64)
+
+const geometry=new THREE.SphereGeometry(500,64,64)
 
 this.skyMaterial=new THREE.ShaderMaterial({
 side:THREE.BackSide,
@@ -65,19 +104,25 @@ gl_FragColor=vec4(col,1.0);
 `
 })
 
-this.sky=new THREE.Mesh(geo,this.skyMaterial)
-this.scene.add(this.sky)
+this.skyMesh=new THREE.Mesh(geometry,this.skyMaterial)
+this.scene.add(this.skyMesh)
 }
 
+/* =========================
+   HEART
+========================= */
+
 createHeart(){
+
 const shape=new THREE.Shape()
+
 shape.moveTo(0,0)
 shape.bezierCurveTo(0,3,-4,3,-4,0)
 shape.bezierCurveTo(-4,-3,0,-5,0,-7)
 shape.bezierCurveTo(0,-5,4,-3,4,0)
 shape.bezierCurveTo(4,3,0,3,0,0)
 
-const geo=new THREE.ExtrudeGeometry(shape,{
+const geometry=new THREE.ExtrudeGeometry(shape,{
 depth:2,
 bevelEnabled:true,
 bevelSegments:6,
@@ -86,111 +131,33 @@ bevelSize:0.4,
 bevelThickness:0.6
 })
 
-geo.center()
+geometry.center()
 
-const mat=new THREE.MeshStandardMaterial({
+const material=new THREE.MeshStandardMaterial({
 color:0xff2a6d,
 emissive:0x550022,
 roughness:0.3,
 metalness:0.1
 })
 
-this.heart=new THREE.Mesh(geo,mat)
-this.heart.scale.set(0.7,0.7,0.7)
-this.scene.add(this.heart)
+this.heartMesh=new THREE.Mesh(geometry,material)
+this.heartMesh.scale.set(0.7,0.7,0.7)
+
+this.scene.add(this.heartMesh)
+
+this.beatTime=0
 }
-/* =========================
-   SNOW SYSTEM (Optimized)
-========================= */
-
-createSnow(){
-this.snowCount=1500
-
-this.snowGeo=new THREE.BufferGeometry()
-this.snowPositions=new Float32Array(this.snowCount*3)
-
-for(let i=0;i<this.snowCount;i++){
-this.snowPositions[i*3]=(Math.random()-0.5)*200
-this.snowPositions[i*3+1]=Math.random()*100
-this.snowPositions[i*3+2]=(Math.random()-0.5)*200
-}
-
-this.snowGeo.setAttribute(
-'position',
-new THREE.BufferAttribute(this.snowPositions,3)
-)
-
-this.snowMat=new THREE.PointsMaterial({
-color:0xffb6ff,
-size:0.6,
-transparent:true,
-opacity:0.8,
-depthWrite:false
-})
-
-this.snow=new THREE.Points(this.snowGeo,this.snowMat)
-this.scene.add(this.snow)
-}
-
-updateSnow(dt){
-const arr=this.snowPositions
-
-for(let i=0;i<this.snowCount;i++){
-arr[i*3+1]-=dt*10
-if(arr[i*3+1]<-10) arr[i*3+1]=100
-}
-
-this.snowGeo.attributes.position.needsUpdate=true
-}
-
 
 /* =========================
-   DUST SYSTEM (Rotation Only)
-========================= */
-
-createDust(){
-this.dustCount=2000
-
-this.dustGeo=new THREE.BufferGeometry()
-this.dustPositions=new Float32Array(this.dustCount*3)
-
-for(let i=0;i<this.dustCount;i++){
-this.dustPositions[i*3]=(Math.random()-0.5)*100
-this.dustPositions[i*3+1]=(Math.random()-0.5)*50
-this.dustPositions[i*3+2]=(Math.random()-0.5)*100
-}
-
-this.dustGeo.setAttribute(
-'position',
-new THREE.BufferAttribute(this.dustPositions,3)
-)
-
-this.dustMat=new THREE.PointsMaterial({
-color:0xff77aa,
-size:0.3,
-transparent:true,
-opacity:0.6,
-depthWrite:false
-})
-
-this.dust=new THREE.Points(this.dustGeo,this.dustMat)
-this.scene.add(this.dust)
-}
-
-updateDust(t){
-this.dust.rotation.y=t*0.02
-this.dust.rotation.x=t*0.01
-}
-
-
-/* =========================
-   GALAXY SYSTEM (Optimized)
+   GALAXY (OPTIMIZED INIT)
 ========================= */
 
 createGalaxy(){
+
 this.galaxyCount=6000
 
-this.galaxyGeo=new THREE.BufferGeometry()
+const geometry=new THREE.BufferGeometry()
+
 this.galaxyPositions=new Float32Array(this.galaxyCount*3)
 this.galaxyColors=new Float32Array(this.galaxyCount*3)
 
@@ -200,33 +167,33 @@ const r=Math.random()*150
 const branch=i%5
 const angle=branch/5*Math.PI*2+r*0.05
 
-this.galaxyPositions[i*3]=Math.cos(angle)*r+(Math.random()-0.5)*5
-this.galaxyPositions[i*3+1]=(Math.random()-0.5)*20
-this.galaxyPositions[i*3+2]=Math.sin(angle)*r+(Math.random()-0.5)*5
+const px=Math.cos(angle)*r+(Math.random()-0.5)*5
+const py=(Math.random()-0.5)*20
+const pz=Math.sin(angle)*r+(Math.random()-0.5)*5
 
-// tránh new THREE.Color trong loop
+this.galaxyPositions[i*3]=px
+this.galaxyPositions[i*3+1]=py
+this.galaxyPositions[i*3+2]=pz
+
 const h=0.9-Math.random()*0.2
-const s=0.8
-const l=0.6
-const color=new THREE.Color()
-color.setHSL(h,s,l)
+this._tempColor.setHSL(h,0.8,0.6)
 
-this.galaxyColors[i*3]=color.r
-this.galaxyColors[i*3+1]=color.g
-this.galaxyColors[i*3+2]=color.b
+this.galaxyColors[i*3]=this._tempColor.r
+this.galaxyColors[i*3+1]=this._tempColor.g
+this.galaxyColors[i*3+2]=this._tempColor.b
 }
 
-this.galaxyGeo.setAttribute(
+geometry.setAttribute(
 'position',
 new THREE.BufferAttribute(this.galaxyPositions,3)
 )
 
-this.galaxyGeo.setAttribute(
+geometry.setAttribute(
 'color',
 new THREE.BufferAttribute(this.galaxyColors,3)
 )
 
-this.galaxyMat=new THREE.PointsMaterial({
+this.galaxyMaterial=new THREE.PointsMaterial({
 size:0.7,
 vertexColors:true,
 transparent:true,
@@ -234,90 +201,232 @@ opacity:0.9,
 depthWrite:false
 })
 
-this.galaxy=new THREE.Points(this.galaxyGeo,this.galaxyMat)
-this.scene.add(this.galaxy)
+this.galaxyPoints=new THREE.Points(geometry,this.galaxyMaterial)
+
+this.scene.add(this.galaxyPoints)
 }
 
 updateGalaxy(t){
-this.galaxy.rotation.y=t*0.01
+this.galaxyPoints.rotation.y=t*0.01
 }
 /* =========================
-   FIREWORK SYSTEM (Optimized)
+   SNOW SYSTEM (CPU OPTIMIZED)
+========================= */
+
+createSnow(){
+
+this.snowCount=1500
+
+const geometry=new THREE.BufferGeometry()
+
+this.snowPositions=new Float32Array(this.snowCount*3)
+
+for(let i=0;i<this.snowCount;i++){
+
+const stride=i*3
+
+this.snowPositions[stride]=(Math.random()-0.5)*200
+this.snowPositions[stride+1]=Math.random()*100
+this.snowPositions[stride+2]=(Math.random()-0.5)*200
+}
+
+geometry.setAttribute(
+'position',
+new THREE.BufferAttribute(this.snowPositions,3)
+)
+
+this.snowMaterial=new THREE.PointsMaterial({
+color:0xffb6ff,
+size:0.6,
+transparent:true,
+opacity:0.8,
+depthWrite:false
+})
+
+this.snowPoints=new THREE.Points(geometry,this.snowMaterial)
+
+this.scene.add(this.snowPoints)
+
+this._snowResetHeight=100
+this._snowFloor=-10
+this._snowFallSpeed=10
+}
+
+updateSnow(delta){
+
+const positions=this.snowPositions
+const count=this.snowCount
+const fallSpeed=this._snowFallSpeed*delta
+const floor=this._snowFloor
+const resetHeight=this._snowResetHeight
+
+for(let i=0;i<count;i++){
+
+const stride=i*3+1
+
+positions[stride]-=fallSpeed
+
+if(positions[stride]<floor){
+positions[stride]=resetHeight
+}
+}
+
+this.snowPoints.geometry.attributes.position.needsUpdate=true
+}
+
+/* =========================
+   DUST SYSTEM (Rotation Only - Cleaned)
+========================= */
+
+createDust(){
+
+this.dustCount=2000
+
+const geometry=new THREE.BufferGeometry()
+
+this.dustPositions=new Float32Array(this.dustCount*3)
+
+for(let i=0;i<this.dustCount;i++){
+
+const stride=i*3
+
+this.dustPositions[stride]=(Math.random()-0.5)*100
+this.dustPositions[stride+1]=(Math.random()-0.5)*50
+this.dustPositions[stride+2]=(Math.random()-0.5)*100
+}
+
+geometry.setAttribute(
+'position',
+new THREE.BufferAttribute(this.dustPositions,3)
+)
+
+this.dustMaterial=new THREE.PointsMaterial({
+color:0xff77aa,
+size:0.3,
+transparent:true,
+opacity:0.6,
+depthWrite:false
+})
+
+this.dustPoints=new THREE.Points(geometry,this.dustMaterial)
+
+this.scene.add(this.dustPoints)
+
+this._dustRotYSpeed=0.02
+this._dustRotXSpeed=0.01
+}
+
+updateDust(time){
+
+this.dustPoints.rotation.y=time*this._dustRotYSpeed
+this.dustPoints.rotation.x=time*this._dustRotXSpeed
+}
+/* =========================
+   FIREWORK SYSTEM (STABLE + OPTIMIZED)
 ========================= */
 
 createFireworks(){
+
 this.fireworks=[]
+
+this._fireworkBaseSpawnRate=0.4
+this._fireworkSpawnAccumulator=0
+
+this._fireworkLife=2
+this._fireworkGravity=this.GRAVITY
+
 }
+
+/* =========================
+   SPAWN
+========================= */
 
 spawnFirework(){
 
+if(this.fireworks.length>=this.MAX_FIREWORKS) return
+
 const patterns=['sphere','ring','spiral','burst']
-const type=patterns[Math.floor(Math.random()*patterns.length)]
+const type=patterns[(Math.random()*patterns.length)|0]
 
-const count=Math.floor(200*this.densityFactor)
+const count=(200*this.densityFactor)|0
 
-const geo=new THREE.BufferGeometry()
+const geometry=new THREE.BufferGeometry()
 
 const positions=new Float32Array(count*3)
 const velocities=new Float32Array(count*3)
 
 for(let i=0;i<count;i++){
 
+const stride=i*3
+
 let dx=0,dy=0,dz=0
 
 if(type==='sphere'){
+
 dx=Math.random()*2-1
 dy=Math.random()*2-1
 dz=Math.random()*2-1
+
 const len=Math.sqrt(dx*dx+dy*dy+dz*dz)||1
-dx/=len; dy/=len; dz/=len
+
+dx/=len
+dy/=len
+dz/=len
 }
 
-if(type==='ring'){
+else if(type==='ring'){
+
 const a=Math.random()*Math.PI*2
+
 dx=Math.cos(a)
 dy=0
 dz=Math.sin(a)
 }
 
-if(type==='spiral'){
-const a=i/count*Math.PI*10
+else if(type==='spiral'){
+
+const ratio=i/count
+const a=ratio*Math.PI*10
+
 dx=Math.cos(a)
-dy=i/count
+dy=ratio
 dz=Math.sin(a)
 }
 
-if(type==='burst'){
+else{
+
 dx=Math.random()*2-1
 dy=Math.random()*2-1
 dz=Math.random()*2-1
 }
 
-positions[i*3]=0
-positions[i*3+1]=0
-positions[i*3+2]=0
+positions[stride]=0
+positions[stride+1]=0
+positions[stride+2]=0
 
 const speed=Math.random()*20+20
 
-velocities[i*3]=dx*speed
-velocities[i*3+1]=dy*speed
-velocities[i*3+2]=dz*speed
+velocities[stride]=dx*speed
+velocities[stride+1]=dy*speed
+velocities[stride+2]=dz*speed
 }
 
-geo.setAttribute(
+geometry.setAttribute(
 'position',
 new THREE.BufferAttribute(positions,3)
 )
 
-const mat=new THREE.PointsMaterial({
-color:new THREE.Color().setHSL(Math.random(),1,0.6),
+this._tempColor.setHSL(Math.random(),1,0.6)
+
+const material=new THREE.PointsMaterial({
+color:this._tempColor.clone(),
 size:0.8,
 transparent:true,
 opacity:1,
 depthWrite:false
 })
 
-const points=new THREE.Points(geo,mat)
+const points=new THREE.Points(geometry,material)
 
 points.position.set(
 (Math.random()-0.5)*40,
@@ -331,32 +440,50 @@ this.fireworks.push({
 points,
 positions,
 velocities,
-life:2,
+life:this._fireworkLife,
+maxLife:this._fireworkLife,
 count
 })
 }
 
-updateFireworks(dt){
+/* =========================
+   UPDATE
+========================= */
 
-for(let i=this.fireworks.length-1;i>=0;i--){
+updateFireworks(delta){
 
-const fw=this.fireworks[i]
-const pos=fw.positions
-const vel=fw.velocities
+const gravity=this._fireworkGravity
+const fireworks=this.fireworks
 
-for(let j=0;j<fw.count;j++){
+for(let i=fireworks.length-1;i>=0;i--){
 
-pos[j*3]+=vel[j*3]*dt
-pos[j*3+1]+=vel[j*3+1]*dt
-pos[j*3+2]+=vel[j*3+2]*dt
+const fw=fireworks[i]
 
-vel[j*3+1]-=9.8*dt*0.5
+const positions=fw.positions
+const velocities=fw.velocities
+const count=fw.count
+
+for(let j=0;j<count;j++){
+
+const stride=j*3
+
+positions[stride]+=velocities[stride]*delta
+positions[stride+1]+=velocities[stride+1]*delta
+positions[stride+2]+=velocities[stride+2]*delta
+
+velocities[stride+1]-=gravity*delta
 }
 
 fw.points.geometry.attributes.position.needsUpdate=true
 
-fw.life-=dt
-fw.points.material.opacity=fw.life/2
+fw.life-=delta
+
+/* Smooth fade (ease out cubic) */
+
+const normalized=fw.life/fw.maxLife
+const eased=normalized*normalized*normalized
+
+fw.points.material.opacity=eased
 
 if(fw.life<=0){
 
@@ -364,118 +491,214 @@ this.scene.remove(fw.points)
 fw.points.geometry.dispose()
 fw.points.material.dispose()
 
-this.fireworks.splice(i,1)
+fireworks.splice(i,1)
 }
 }
 
-if(Math.random()<0.4*this.densityFactor){
+/* Accumulator-based spawn (stable cinematic rate) */
+
+this._fireworkSpawnAccumulator+=delta
+
+const spawnInterval=this._fireworkBaseSpawnRate/this.densityFactor
+
+while(this._fireworkSpawnAccumulator>=spawnInterval){
+
 this.spawnFirework()
+this._fireworkSpawnAccumulator-=spawnInterval
 }
 }
-
-
 /* =========================
-   SHOCKWAVE SYSTEM
+   SHOCKWAVE SYSTEM (POOLED)
 ========================= */
 
 createShockwave(){
+
 this.shockwaves=[]
-}
 
-spawnShockwave(position){
+/* Shared geometry & material */
 
-const geo=new THREE.RingGeometry(0.5,0.7,64)
+this._shockwaveGeometry=new THREE.RingGeometry(0.5,0.7,64)
 
-const mat=new THREE.MeshBasicMaterial({
+this._shockwaveMaterial=new THREE.MeshBasicMaterial({
 color:0xff66aa,
 transparent:true,
 opacity:0.6,
 side:THREE.DoubleSide
 })
 
-const mesh=new THREE.Mesh(geo,mat)
+/* Object pool */
+
+this._shockwavePool=[]
+this._maxShockwaves=10
+}
+
+/* =========================
+   SPAWN (POOLING)
+========================= */
+
+spawnShockwave(position){
+
+let mesh
+
+if(this._shockwavePool.length>0){
+
+mesh=this._shockwavePool.pop()
+
+}else{
+
+mesh=new THREE.Mesh(
+this._shockwaveGeometry,
+this._shockwaveMaterial.clone()
+)
+}
 
 mesh.position.copy(position)
 mesh.rotation.x=-Math.PI/2
+mesh.scale.set(1,1,1)
+mesh.material.opacity=0.6
 
 this.scene.add(mesh)
 
 this.shockwaves.push({
 mesh,
-life:1
+life:1,
+maxLife:1
 })
 }
 
-updateShockwave(dt){
+/* =========================
+   UPDATE
+========================= */
+
+updateShockwave(delta){
 
 for(let i=this.shockwaves.length-1;i>=0;i--){
 
 const s=this.shockwaves[i]
 
-s.mesh.scale.multiplyScalar(1+dt*5)
-s.mesh.material.opacity-=dt
-s.life-=dt
+/* Scale expansion */
+
+const scaleFactor=1+delta*5
+s.mesh.scale.multiplyScalar(scaleFactor)
+
+/* Smooth fade */
+
+s.life-=delta
+
+const normalized=s.life/s.maxLife
+const eased=normalized*normalized
+
+s.mesh.material.opacity=0.6*eased
 
 if(s.life<=0){
 
 this.scene.remove(s.mesh)
-s.mesh.geometry.dispose()
+
+/* Return to pool instead of dispose */
+
+if(this._shockwavePool.length<this._maxShockwaves){
+this._shockwavePool.push(s.mesh)
+}else{
 s.mesh.material.dispose()
+}
 
 this.shockwaves.splice(i,1)
 }
 }
 }
+
 /* =========================
-   FPS ADAPTIVE SYSTEM
+   FPS ADAPTIVE (SMOOTHED)
 ========================= */
 
-updateFPS(dt){
+updateFPS(delta){
+
 this.frameCount++
-this.fpsTimer+=dt
+this.fpsTimer+=delta
 
 if(this.fpsTimer>=1){
 
-this.fps=this.frameCount
+const currentFPS=this.frameCount/this.fpsTimer
+
+/* Smooth moving average */
+
+this.fps=this.fps*0.7+currentFPS*0.3
+
 this.frameCount=0
 this.fpsTimer=0
 
+/* Adaptive density */
+
 if(this.fps<45){
-this.densityFactor=Math.max(0.4,this.densityFactor-0.1)
+this.densityFactor=Math.max(0.4,this.densityFactor-0.05)
 }
-
-if(this.fps>55){
-this.densityFactor=Math.min(1.5,this.densityFactor+0.1)
-}
+else if(this.fps>55){
+this.densityFactor=Math.min(1.5,this.densityFactor+0.05)
 }
 }
-
+}
 
 /* =========================
-   MAIN UPDATE LOOP
+   MAIN UPDATE LOOP (CLEAN)
 ========================= */
 
 update(delta){
 
-const t=this.clock.elapsedTime
+/* Stable time accumulation */
+
+this.elapsedTime+=delta
+const time=this.elapsedTime
+
+/* FPS adaptation */
 
 this.updateFPS(delta)
 
+/* Heart beat */
+
 this.beatTime+=delta*3
+
 const beatScale=1+Math.sin(this.beatTime)*0.08
-this.heart.scale.set(beatScale,beatScale,beatScale)
+
+this.heartMesh.scale.set(
+beatScale,
+beatScale,
+beatScale
+)
+
+/* Systems */
 
 this.updateSnow(delta)
-this.updateDust(t)
-this.updateGalaxy(t)
+this.updateDust(time)
+this.updateGalaxy(time)
 this.updateFireworks(delta)
 this.updateShockwave(delta)
 
-if(this.skyMaterial){
-this.skyMaterial.uniforms.uTime.value=t
-}
-}
+/* Sky */
 
+if(this.skyMaterial){
+this.skyMaterial.uniforms.uTime.value=time
+}
+}
+/* =========================
+   FIREWORK SAFETY CAP (HARD LIMIT)
+========================= */
+
+enforceFireworkLimit(){
+
+if(this.fireworks.length<=this.MAX_FIREWORKS) return
+
+const overflow=this.fireworks.length-this.MAX_FIREWORKS
+
+for(let i=0;i<overflow;i++){
+
+const fw=this.fireworks.shift()
+
+this.scene.remove(fw.points)
+
+fw.points.geometry.dispose()
+fw.points.material.dispose()
+}
+}
 
 /* =========================
    CLEAN DISPOSE (GPU SAFE)
@@ -483,36 +706,101 @@ this.skyMaterial.uniforms.uTime.value=t
 
 dispose(){
 
-// remove fireworks
+/* =========================
+   FIREWORKS
+========================= */
+
 for(const fw of this.fireworks){
+
 this.scene.remove(fw.points)
+
 fw.points.geometry.dispose()
 fw.points.material.dispose()
 }
-this.fireworks=[]
 
-// remove shockwaves
+this.fireworks.length=0
+
+/* =========================
+   SHOCKWAVES (ACTIVE)
+========================= */
+
 for(const s of this.shockwaves){
+
 this.scene.remove(s.mesh)
-s.mesh.geometry.dispose()
-s.mesh.material.dispose()
 }
-this.shockwaves=[]
 
-// traverse remaining objects
-this.scene.traverse(obj=>{
-if(obj.geometry) obj.geometry.dispose()
+this.shockwaves.length=0
 
-if(obj.material){
-if(Array.isArray(obj.material)){
-obj.material.forEach(m=>m.dispose())
-}else{
-obj.material.dispose()
+/* =========================
+   SHOCKWAVE POOL
+========================= */
+
+for(const mesh of this._shockwavePool){
+
+mesh.material.dispose()
 }
-}
-})
 
-// clear scene
+this._shockwavePool.length=0
+
+/* Shared shockwave resources */
+
+if(this._shockwaveGeometry){
+this._shockwaveGeometry.dispose()
+}
+
+if(this._shockwaveMaterial){
+this._shockwaveMaterial.dispose()
+}
+
+/* =========================
+   STATIC SYSTEMS
+========================= */
+
+if(this.snowPoints){
+
+this.scene.remove(this.snowPoints)
+this.snowPoints.geometry.dispose()
+this.snowPoints.material.dispose()
+}
+
+if(this.dustPoints){
+
+this.scene.remove(this.dustPoints)
+this.dustPoints.geometry.dispose()
+this.dustPoints.material.dispose()
+}
+
+if(this.galaxyPoints){
+
+this.scene.remove(this.galaxyPoints)
+this.galaxyPoints.geometry.dispose()
+this.galaxyPoints.material.dispose()
+}
+
+if(this.skyMesh){
+
+this.scene.remove(this.skyMesh)
+this.skyMesh.geometry.dispose()
+this.skyMaterial.dispose()
+}
+
+if(this.heartMesh){
+
+this.scene.remove(this.heartMesh)
+this.heartMesh.geometry.dispose()
+this.heartMesh.material.dispose()
+}
+
+if(this.ambientLight){
+this.scene.remove(this.ambientLight)
+}
+
+if(this.directionalLight){
+this.scene.remove(this.directionalLight)
+}
+
+/* Final scene cleanup */
+
 while(this.scene.children.length>0){
 this.scene.remove(this.scene.children[0])
 }
