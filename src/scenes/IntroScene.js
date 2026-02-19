@@ -12,6 +12,8 @@ this.particleTexture.generateMipmaps=true
 this.particleTexture.minFilter=THREE.LinearMipmapLinearFilter
 this.particleTexture.magFilter=THREE.LinearFilter
 this.particleTexture.premultiplyAlpha=false
+this.particleTexture.flipY=false
+this.particleTexture.needsUpdate=true
 /* =========================
    CORE TIMING
 ========================= */
@@ -330,9 +332,10 @@ alphaTest:0.001,
 depthWrite:false,
 blending:THREE.AdditiveBlending,
 vertexColors:true,
-sizeAttenuation:true,
-opacity:1
+sizeAttenuation:true
 })
+material.alphaMap=this.particleTexture
+material.needsUpdate=true
 const points=new THREE.Points(geometry,material)
 points.position.set(
 (Math.random()-0.5)*40,
