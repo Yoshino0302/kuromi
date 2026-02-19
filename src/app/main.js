@@ -80,8 +80,7 @@ class MainEngine {
     initManagers() {
         this.engineCore =
             new EngineCore(
-                this.renderer,
-                this.camera
+               this.canvas
             )
         this.resourceManager =
             new ResourceManager()
