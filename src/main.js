@@ -1,4 +1,4 @@
-import { Engine } from './core/Engine.js'
+import { Engine } from './core/EngineCore.js'
 import { ValentineScene } from './scenes/ValentineScene.js'
 import { Logger } from './utils/Logger.js'
 class Application{
