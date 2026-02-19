@@ -1,1 +1,0 @@
-export class BaseScene{constructor(engine){this.engine=engine}init(){}update(dt){}dispose(){}}
