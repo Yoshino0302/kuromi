@@ -1,1 +1,0 @@
-export const HeartGlowShader={vertex:`void main(){gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}`,fragment:`void main(){gl_FragColor=vec4(1.0,0.2,0.5,1.0);}`};
