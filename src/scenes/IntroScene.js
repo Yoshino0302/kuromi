@@ -742,3 +742,4 @@ while(this.scene.children.length>0){
 this.scene.remove(this.scene.children[0])
 }
 }
+}
