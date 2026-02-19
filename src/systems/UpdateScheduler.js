@@ -1,1 +1,0 @@
-export class UpdateScheduler{constructor(){this.systems=[]}add(s){this.systems.push(s);this.systems.sort((a,b)=>(a.priority||0)-(b.priority||0))}update(dt){for(const s of this.systems){if(s.update)s.update(dt)}}}
