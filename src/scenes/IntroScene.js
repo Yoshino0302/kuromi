@@ -11,47 +11,22 @@ export class IntroScene {
         this.resourceManager = resourceManager
         this.memoryTracker = memoryTracker
         this.scene = new THREE.Scene()
-        this.clock = new THREE.Clock()
         this.elapsedTime = 0
         this.effects = []
         this.initialized = false
     }
     init() {
-        if (this.initialized)
-            return
+        if (this.initialized) return
         this.initialized = true
-        this.setupCamera()
-        this.setupLights()
-        this.createEffects()
-    }
-    setupCamera() {
-        this.camera.position.set(
-            0,
-            12,
-            45
-        )
+        this.camera.position.set(0, 12, 45)
         this.camera.lookAt(0, 0, 0)
-    }
-    setupLights() {
         const ambient =
-            new THREE.AmbientLight(
-                0xff66aa,
-                0.8
-            )
-        this.scene.add(ambient)
+            new THREE.AmbientLight(0xff66aa, 0.8)
         const directional =
-            new THREE.DirectionalLight(
-                0xff3377,
-                1.2
-            )
-        directional.position.set(
-            5,
-            10,
-            7
-        )
+            new THREE.DirectionalLight(0xff3377, 1.2)
+        directional.position.set(5, 10, 7)
+        this.scene.add(ambient)
         this.scene.add(directional)
-    }
-    createEffects() {
         this.galaxy =
             new GalaxyEffect(
                 this.scene,
@@ -89,31 +64,24 @@ export class IntroScene {
             this.fireworks,
             this.shockwave
         )
-        this.effects.forEach(effect =>
-            effect.init()
-        )
+        this.effects.forEach(e => e.init())
     }
     update(delta) {
         this.elapsedTime += delta
-        const time = this.elapsedTime
-        this.galaxy.update(time)
+        const t = this.elapsedTime
+        this.galaxy.update(t)
         this.snow.update(delta)
         this.dust.update(delta)
         this.fireworks.update(delta)
         this.shockwave.update(delta)
-        this.updateCameraMotion(time)
-    }
-    updateCameraMotion(time) {
         this.camera.position.x =
-            Math.sin(time * 0.15) * 6
+            Math.sin(t * 0.15) * 6
         this.camera.position.y =
-            12 + Math.cos(time * 0.25) * 2
+            12 + Math.cos(t * 0.25) * 2
         this.camera.lookAt(0, 0, 0)
     }
     dispose() {
-        this.effects.forEach(effect =>
-            effect.dispose()
-        )
+        this.effects.forEach(e => e.dispose())
         this.scene.clear()
     }
 }
