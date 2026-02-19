@@ -1,1 +1,0 @@
-export class GPUResourceTracker{constructor(){this.resources=new Set()}track(r){if(r)this.resources.add(r);return r}dispose(){for(const r of this.resources){if(r.dispose)r.dispose()}this.resources.clear()}}
