@@ -5,7 +5,7 @@ this.camera=camera
 this.scene=new THREE.Scene()
 this.textureLoader=new THREE.TextureLoader()
 this.particleTexture=this.textureLoader.load(
-new URL('../assets/textures/circle.png',import.meta.url).href
+'/kuromi/src/assets/textures/circle.png'
 )
 this.particleTexture.colorSpace=THREE.SRGBColorSpace
 this.particleTexture.generateMipmaps=true
