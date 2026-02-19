@@ -8,7 +8,11 @@ this.gpuTracker=config.gpuTracker||null
 this.memoryTracker=config.memoryTracker||null
 this.scene=new THREE.Scene()
 this.camera=new THREE.PerspectiveCamera(60,window.innerWidth/window.innerHeight,0.1,1000)
-this.sceneWrapper={scene:this.scene,camera:this.camera}
+this.sceneWrapper = {
+ scene: this.scene,
+ camera: this.camera,
+ renderer: this.renderer
+}
 this.objects=new Set()
 this.initialized=false
 this.destroyed=false
