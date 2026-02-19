@@ -1,7 +1,10 @@
 import * as THREE from 'https://jspm.dev/three'
+
 import { GlassPortalEffect } from '../effects/portal/GlassPortalEffect.js'
 import { BlackholeEffect } from '../effects/blackhole/BlackholeEffect.js'
 import { VortexEffect } from '../effects/vortex/VortexEffect.js'
+import { VolumetricLight } from '../effects/volumetric/VolumetricLight.js'
+import { EnergyParticles } from '../effects/particles/EnergyParticles.js'
 
 export class SceneManager{
 
@@ -11,7 +14,7 @@ this.scene=new THREE.Scene()
 
 this.scene.background=new THREE.Color(0x000000)
 
-this.createTestObject()
+this.createCoreObjects()
 
 this.createLights()
 
@@ -19,7 +22,7 @@ this.createEffects()
 
 }
 
-createTestObject(){
+createCoreObjects(){
 
 const geometry=new THREE.BoxGeometry(1,1,1)
 
@@ -72,6 +75,12 @@ new BlackholeEffect(this.scene)
 this.vortexEffect=
 new VortexEffect(this.scene)
 
+this.volumetricLight=
+new VolumetricLight(this.scene)
+
+this.energyParticles=
+new EnergyParticles(this.scene)
+
 }
 
 update(delta){
@@ -79,7 +88,6 @@ update(delta){
 if(this.testMesh){
 
 this.testMesh.rotation.x+=delta*0.5
-
 this.testMesh.rotation.y+=delta*0.7
 
 }
@@ -99,6 +107,18 @@ this.blackholeEffect.update(delta)
 if(this.vortexEffect){
 
 this.vortexEffect.update(delta)
+
+}
+
+if(this.volumetricLight){
+
+this.volumetricLight.update(delta)
+
+}
+
+if(this.energyParticles){
+
+this.energyParticles.update(delta)
 
 }
 
