@@ -8,17 +8,21 @@ this.gpuTracker=config.gpuTracker||null
 this.memoryTracker=config.memoryTracker||null
 this.scene=new THREE.Scene()
 this.camera=new THREE.PerspectiveCamera(60,window.innerWidth/window.innerHeight,0.1,1000)
-this.sceneWrapper = {
- scene: this.scene,
- camera: this.camera,
- renderer: this.renderer
-}
+this.sceneWrapper={scene:this.scene,camera:this.camera,renderer:this.renderer}
 this.objects=new Set()
 this.initialized=false
 this.destroyed=false
 Logger.info(this.constructor.name+' constructed')}
-async init(){
-this.initialized=true}
+async init(sceneWrapper){
+if(this.initialized)return
+if(sceneWrapper){
+if(sceneWrapper.renderer)this.renderer=sceneWrapper.renderer
+this.sceneWrapper.scene=this.scene
+this.sceneWrapper.camera=this.camera
+this.sceneWrapper.renderer=this.renderer}
+if(!this.sceneWrapper.renderer&&this.renderer)this.sceneWrapper.renderer=this.renderer
+this.initialized=true
+Logger.info(this.constructor.name+' initialized')}
 update(delta){}
 add(object){
 if(!object)return
@@ -34,10 +38,16 @@ remove(object){
 if(!object)return
 this.scene.remove(object)
 this.objects.delete(object)
+if(object.geometry&&this.gpuTracker)this.gpuTracker.untrack(object.geometry)
+if(object.material){
+if(Array.isArray(object.material)){
+for(let i=0;i<object.material.length;i++)if(this.gpuTracker)this.gpuTracker.untrack(object.material[i])}
+else if(this.gpuTracker)this.gpuTracker.untrack(object.material)}
 if(this.memoryTracker)this.memoryTracker.untrack(object)}
 getSceneWrapper(){
 return this.sceneWrapper}
 resize(width,height){
+if(height===0)return
 this.camera.aspect=width/height
 this.camera.updateProjectionMatrix()}
 async destroy(){
@@ -57,4 +67,5 @@ object.material.dispose()
 if(this.gpuTracker)this.gpuTracker.untrack(object.material)}}if(this.memoryTracker)this.memoryTracker.untrack(object)}
 this.objects.clear()
 this.destroyed=true
+this.initialized=false
 Logger.info(this.constructor.name+' destroyed')}}
