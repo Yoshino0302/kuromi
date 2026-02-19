@@ -1,6 +1,6 @@
 import * as THREE from 'https://jspm.dev/three'
-import { PortalEffect } from '../effects/PortalEffect.js'
-import { BlackholeEffect } from '../effects/BlackholeEffect.js'
+import { PortalEffect } from '../effects/portal/PortalEffect.js'
+import { BlackholeEffect } from '../effects/blackhole/BlackholeEffect.js'
 import { HeartParticlesSystem } from '../effects/HeartParticlesSystem.js'
 import { LightingSystem } from '../lighting/LightingSystem.js'
 import { ValentineColors } from '../config/ValentineColors.js'
