@@ -1,24 +1,27 @@
 import * as THREE from 'https://jspm.dev/three'
 
-import { PostProcessingPipeline } from './PostProcessingPipeline.js'
-
 export class Renderer{
 
 constructor(){
 
+this.canvas=document.getElementById('engine-canvas')
+
 this.renderer=new THREE.WebGLRenderer({
+canvas:this.canvas,
 antialias:true,
-powerPreference:'high-performance'
+alpha:false,
+powerPreference:'high-performance',
+stencil:false,
+depth:true
 })
 
-this.renderer.setSize(
-window.innerWidth,
-window.innerHeight
-)
+this.configureRenderer()
 
-this.renderer.setPixelRatio(
-Math.min(window.devicePixelRatio,2)
-)
+this.resize()
+
+}
+
+configureRenderer(){
 
 this.renderer.outputColorSpace=
 THREE.SRGBColorSpace
@@ -28,41 +31,33 @@ THREE.ACESFilmicToneMapping
 
 this.renderer.toneMappingExposure=1.0
 
+this.renderer.physicallyCorrectLights=true
+
 this.renderer.shadowMap.enabled=true
 
-document.body.appendChild(
-this.renderer.domElement
-)
+this.renderer.shadowMap.type=
+THREE.PCFSoftShadowMap
 
-this.pipeline=
-new PostProcessingPipeline(
-this.renderer
-)
+this.renderer.useLegacyLights=false
 
-window.addEventListener(
-'resize',
-()=>this.onResize()
-)
+this.renderer.sortObjects=true
+
+this.renderer.setClearColor(0x000000,1)
 
 }
 
-onResize(){
+resize(){
 
-const w=window.innerWidth
-const h=window.innerHeight
+const width=window.innerWidth
+const height=window.innerHeight
 
-this.renderer.setSize(w,h)
-
-this.pipeline.resize(w,h)
+this.renderer.setSize(width,height,false)
 
 }
 
 render(scene,camera){
 
-this.pipeline.render(
-scene,
-camera
-)
+this.renderer.render(scene,camera)
 
 }
 
