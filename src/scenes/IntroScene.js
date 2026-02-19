@@ -822,14 +822,15 @@ const colAttr =
 geometry.attributes.color
 posAttr.array.set(pos)
 colAttr.array.set(col)
-posAttr.updateRange.offset = 0
-posAttr.updateRange.count =
-count * 3
-colAttr.updateRange.offset = 0
-colAttr.updateRange.count =
-count * 3
+posAttr.clearUpdateRanges()
+posAttr.addUpdateRange(0, count * 3)
+
+colAttr.clearUpdateRanges()
+colAttr.addUpdateRange(0, count * 3)
+
 posAttr.needsUpdate = true
 colAttr.needsUpdate = true
+
 geometry.setDrawRange(
 0,
 count
@@ -912,10 +913,11 @@ vel[i3+2] * delta
 const attr =
 mesh.geometry.attributes.position
 attr.array.set(pos)
-attr.updateRange.offset = 0
-attr.updateRange.count =
-count * 3
+attr.clearUpdateRanges()
+attr.addUpdateRange(0, count * 3)
+
 attr.needsUpdate = true
+
 /* CINEMATIC FADE */
 fw.life -= delta
 const t =
