@@ -47,8 +47,6 @@ this.renderer.shadowMap.enabled=true
 this.renderer.shadowMap.type=
 THREE.PCFSoftShadowMap
 
-this.renderer.useLegacyLights=false
-
 this.renderer.sortObjects=true
 
 this.renderer.setClearColor(0x000000,1)
