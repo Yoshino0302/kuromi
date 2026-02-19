@@ -53,3 +53,9 @@ this.loading.clear()}
 destroy(){
 this.unloadAll()
 Logger.info('ResourceManager destroyed')}}
+destroy(){
+ for(const texture of this.cache.values()){
+  texture.dispose()
+ }
+ this.cache.clear()
+}
