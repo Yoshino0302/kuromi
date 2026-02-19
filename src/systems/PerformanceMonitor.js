@@ -1,17 +1,39 @@
+const PERF_STATE={
+ACTIVE:0,
+DISABLED:1,
+DISPOSED:2
+}
+
 export class PerformanceMonitor{
 
 constructor(options={}){
 
 this.options=options
 
+this.state=PERF_STATE.ACTIVE
+
+this.enabled=true
+
+this.targetFPS=options.targetFPS||60
+
 this.sampleInterval=options.sampleInterval||0.5
-this.maxSamples=options.maxSamples||120
+
+this.maxSamples=options.maxSamples||240
+
 this.spikeThreshold=options.spikeThreshold||0.05
+
+this.smoothingFactor=options.smoothingFactor||0.08
 
 this.frames=0
 this.accumulator=0
 
+this.time=0
+
+this.delta=0
+
 this.fps=0
+this.smoothedFps=0
+
 this.minFps=Infinity
 this.maxFps=0
 
@@ -19,31 +41,43 @@ this.frameTime=0
 this.avgFrameTime=0
 
 this.samples=new Float32Array(this.maxSamples)
+
 this.sampleIndex=0
 this.sampleCount=0
 
-this.smoothedFps=0
-
-this.lastDelta=0
 this.spike=false
 
-this.time=0
+this.load=0
 
-this.enabled=true
+this.trend=0
 
 this.onSample=null
+
+this.onSpike=null
+
+this.onDrop=null
+
+this._lastFps=0
+
+this._trendAccumulator=0
 
 }
 
 update(delta){
 
-if(!this.enabled)return this.fps
+if(!this.enabled)return this.smoothedFps
 
-this.lastDelta=delta
+if(this.state!==PERF_STATE.ACTIVE)return this.smoothedFps
+
+if(delta<=0)return this.smoothedFps
+
+this.delta=delta
+
+this.time+=delta
 
 this.frames++
+
 this.accumulator+=delta
-this.time+=delta
 
 this.frameTime=delta
 
@@ -53,14 +87,12 @@ this._storeSample(delta)
 
 if(this.accumulator>=this.sampleInterval){
 
-this._computeFps()
+this._compute()
 
 this.frames=0
 this.accumulator=0
 
-if(this.onSample){
-this.onSample(this.getMetrics())
-}
+this._emitSample()
 
 }
 
@@ -70,7 +102,15 @@ return this.smoothedFps
 
 _detectSpike(delta){
 
-this.spike=delta>this.spikeThreshold
+const spike=delta>this.spikeThreshold
+
+if(spike&&!this.spike){
+
+this.onSpike?.(this.getMetrics())
+
+}
+
+this.spike=spike
 
 }
 
@@ -78,22 +118,32 @@ _storeSample(delta){
 
 this.samples[this.sampleIndex]=delta
 
-this.sampleIndex=(this.sampleIndex+1)%this.maxSamples
+this.sampleIndex++
+
+if(this.sampleIndex>=this.maxSamples){
+
+this.sampleIndex=0
+
+}
 
 if(this.sampleCount<this.maxSamples){
+
 this.sampleCount++
-}
 
 }
 
-_computeFps(){
+}
+
+_compute(){
 
 if(this.sampleCount===0)return
 
 let total=0
 
 for(let i=0;i<this.sampleCount;i++){
+
 total+=this.samples[i]
+
 }
 
 const avgDelta=total/this.sampleCount
@@ -104,10 +154,85 @@ const fps=avgDelta>0?1/avgDelta:0
 
 this.fps=fps
 
-if(fps<this.minFps)this.minFps=fps
-if(fps>this.maxFps)this.maxFps=fps
+this.smoothedFps=this._smooth(
+this.smoothedFps,
+fps,
+this.smoothingFactor
+)
 
-this.smoothedFps=this._smooth(this.smoothedFps,fps,0.1)
+this._updateMinMax()
+
+this._computeLoad()
+
+this._computeTrend()
+
+this._detectDrop()
+
+this._lastFps=this.smoothedFps
+
+}
+
+_updateMinMax(){
+
+if(this.fps<this.minFps){
+
+this.minFps=this.fps
+
+}
+
+if(this.fps>this.maxFps){
+
+this.maxFps=this.fps
+
+}
+
+}
+
+_computeLoad(){
+
+if(this.smoothedFps<=0){
+
+this.load=0
+
+return
+
+}
+
+this.load=Math.min(
+1,
+this.targetFPS/this.smoothedFps
+)
+
+}
+
+_computeTrend(){
+
+const diff=this.smoothedFps-this._lastFps
+
+this.trend=this._smooth(
+this.trend,
+diff,
+0.2
+)
+
+}
+
+_detectDrop(){
+
+if(
+this._lastFps>0 &&
+this.smoothedFps<this._lastFps*0.7
+){
+
+this.onDrop?.(this.getMetrics())
+
+}
+
+}
+
+_emitSample(){
+
+this.onSample?.(this.getMetrics())
 
 }
 
@@ -155,11 +280,13 @@ return this.maxFps
 
 getLoad(){
 
-if(this.smoothedFps<=0)return 0
+return this.load
 
-const target=this.options.targetFPS||60
+}
 
-return Math.min(1,target/this.smoothedFps)
+getTrend(){
+
+return this.trend
 
 }
 
@@ -178,7 +305,8 @@ minFps:this.getMinFPS(),
 maxFps:this.maxFps,
 frameTime:this.frameTime,
 avgFrameTime:this.avgFrameTime,
-load:this.getLoad(),
+load:this.load,
+trend:this.trend,
 spike:this.spike,
 time:this.time
 }
@@ -191,15 +319,21 @@ this.frames=0
 this.accumulator=0
 
 this.fps=0
+this.smoothedFps=0
+
 this.minFps=Infinity
 this.maxFps=0
 
 this.sampleIndex=0
 this.sampleCount=0
 
-this.smoothedFps=0
-
 this.time=0
+
+this.load=0
+
+this.trend=0
+
+this._lastFps=0
 
 }
 
@@ -207,15 +341,23 @@ setEnabled(enabled){
 
 this.enabled=enabled
 
+this.state=enabled
+?PERF_STATE.ACTIVE
+:PERF_STATE.DISABLED
+
 }
 
 dispose(){
 
 this.enabled=false
 
+this.state=PERF_STATE.DISPOSED
+
 this.samples=null
 
 this.onSample=null
+this.onSpike=null
+this.onDrop=null
 
 }
 
