@@ -42,8 +42,6 @@ THREE.ACESFilmicToneMapping
 
 this.renderer.toneMappingExposure=1.0
 
-this.renderer.physicallyCorrectLights=true
-
 this.renderer.shadowMap.enabled=true
 
 this.renderer.shadowMap.type=
