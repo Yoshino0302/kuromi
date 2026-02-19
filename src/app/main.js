@@ -41,12 +41,14 @@ class MainEngine {
             console.error('ENGINE INIT FAILED:', e)
         }
     }
-    resolveCanvas() {
-        this.canvas =
-            document.getElementById('bg')
-        if (!this.canvas)
-            throw new Error('Canvas #bg not found')
+   resolveCanvas() {
+    this.canvas = document.getElementById('bg')
+    if (!(this.canvas instanceof HTMLCanvasElement)) {
+        throw new Error(
+            'Canvas #bg not found or invalid'
+        )
     }
+}
     initRenderer() {
         this.renderer =
             new THREE.WebGLRenderer({
