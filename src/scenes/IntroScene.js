@@ -5,15 +5,17 @@ this.camera=camera
 this.scene=new THREE.Scene()
 this.textureLoader=new THREE.TextureLoader()
 this.particleTexture=this.textureLoader.load(
-'/kuromi/src/assets/textures/circle.png'
+'/kuromi/src/assets/textures/circle.png',
+(texture)=>{
+texture.colorSpace=THREE.SRGBColorSpace
+texture.generateMipmaps=true
+texture.minFilter=THREE.LinearMipmapLinearFilter
+texture.magFilter=THREE.LinearFilter
+texture.premultiplyAlpha=false
+texture.flipY=false
+texture.anisotropy=4
+}
 )
-this.particleTexture.colorSpace=THREE.SRGBColorSpace
-this.particleTexture.generateMipmaps=true
-this.particleTexture.minFilter=THREE.LinearMipmapLinearFilter
-this.particleTexture.magFilter=THREE.LinearFilter
-this.particleTexture.premultiplyAlpha=false
-this.particleTexture.flipY=false
-this.particleTexture.needsUpdate=true
 /* =========================
    CORE TIMING
 ========================= */
