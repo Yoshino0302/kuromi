@@ -35,6 +35,8 @@ time:{value:0}
 
 vertexShader:`
 
+uniform float time;
+
 varying vec2 vUv;
 
 void main(){
@@ -43,8 +45,7 @@ vUv=uv;
 
 vec3 pos=position;
 
-pos.x+=
-sin(pos.y*5.0+time*5.0)*0.2;
+pos.x+=sin(pos.y*5.0+time*5.0)*0.2;
 
 gl_Position=
 projectionMatrix*
