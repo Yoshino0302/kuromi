@@ -1,20 +1,19 @@
-import { EngineCore } from './core/EngineCore.js'
-import { IntroScene } from './scenes/IntroScene.js'
+import { Engine } from './core/Engine.js'
 import { ValentineScene } from './scenes/ValentineScene.js'
 import { Logger } from './utils/Logger.js'
-const canvas=document.querySelector('canvas')||null
-const engine=new EngineCore({canvas})
-async function boot(){
-try{
-await engine.init()
-await engine.loadScene(IntroScene)
-setTimeout(()=>{
-engine.loadScene(ValentineScene)
-},4000)
-engine.start()
-window.__ENGINE__=engine
-Logger.info('Engine boot complete')}
-catch(e){
-Logger.error('Engine boot failed',e)}}
-boot()
-export { engine }
+class Application{
+constructor(){
+this.engine=null
+this.scene=null
+this._boot()}
+_boot(){
+Logger.info('Application boot')
+this.engine=new Engine({
+containerId:'app',
+debug:true})
+this.scene=new ValentineScene(this.engine)
+this.engine.setScene(this.scene)
+this.engine.start()
+Logger.info('Application started Valentine cinematic experience')}}
+window.addEventListener('DOMContentLoaded',()=>{
+new Application()})
