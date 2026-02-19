@@ -11,8 +11,21 @@ ellipse at center,
 #120008 40%,
 #000000 100%
 );
+touch-action:none;
+overscroll-behavior:none;
+-webkit-user-select:none;
+user-select:none;
+-webkit-touch-callout:none;
+-webkit-tap-highlight-color:transparent;
 }
 
+body{
+position:fixed;
+inset:0;
+contain:strict;
+}
+
+#kuromi-engine-canvas,
 #engine-canvas{
 position:fixed;
 top:0;
@@ -20,4 +33,37 @@ left:0;
 width:100%;
 height:100%;
 display:block;
+outline:none;
+border:none;
+margin:0;
+padding:0;
+contain:strict;
+pointer-events:auto;
+touch-action:none;
+image-rendering:optimizeSpeed;
+image-rendering:-webkit-optimize-contrast;
+image-rendering:pixelated;
+transform:translateZ(0);
+backface-visibility:hidden;
+will-change:transform;
+}
+
+canvas{
+display:block;
+contain:strict;
+}
+
+*{
+box-sizing:border-box;
+}
+
+*:focus{
+outline:none;
+}
+
+@media (pointer:coarse){
+html,body{
+position:fixed;
+inset:0;
+}
 }
