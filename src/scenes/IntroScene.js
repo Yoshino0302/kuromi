@@ -5,8 +5,13 @@ this.camera=camera
 this.scene=new THREE.Scene()
 this.textureLoader=new THREE.TextureLoader()
 this.particleTexture=this.textureLoader.load(
-'https://threejs.org/examples/textures/sprites/circle.png'
+new URL('../assets/textures/circle.png',import.meta.url).href
 )
+this.particleTexture.colorSpace=THREE.SRGBColorSpace
+this.particleTexture.generateMipmaps=true
+this.particleTexture.minFilter=THREE.LinearMipmapLinearFilter
+this.particleTexture.magFilter=THREE.LinearFilter
+this.particleTexture.premultiplyAlpha=false
 /* =========================
    CORE TIMING
 ========================= */
