@@ -23,7 +23,7 @@ renderer.setPixelRatio(
 renderer.outputColorSpace = THREE.SRGBColorSpace
 /* CINEMATIC TONE MAPPING */
 renderer.toneMapping = THREE.ACESFilmicToneMapping
-renderer.toneMappingExposure = 0.68
+renderer.toneMappingExposure = 0.
 /* MODERN LIGHTING PIPELINE */
 /* Three.js r155+ uses physically correct lighting by default */
 /* No legacy lighting flags needed */
