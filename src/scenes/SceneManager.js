@@ -17,7 +17,7 @@ renderer:this.renderer,
 resourceManager:this.resourceManager,
 gpuTracker:this.gpuTracker,
 memoryTracker:this.memoryTracker})
-if(typeof sceneInstance.init==='function')await sceneInstance.init()
+if(typeof sceneInstance.init==='function')await sceneInstance.init(sceneInstance.sceneWrapper)
 this.activeSceneInstance=sceneInstance
 this.activeScene=sceneInstance.getSceneWrapper()
 this.sceneStack.push(sceneInstance)
