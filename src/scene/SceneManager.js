@@ -1,12 +1,9 @@
 import * as THREE from 'https://jspm.dev/three'
-
+import { PortalEffect } from '../effects/PortalEffect.js'
+import { BlackholeEffect } from '../effects/BlackholeEffect.js'
+import { HeartParticlesSystem } from '../effects/HeartParticlesSystem.js'
+import { LightingSystem } from '../lighting/LightingSystem.js'
 import { ValentineColors } from '../config/ValentineColors.js'
-
-import { GlassPortalEffect } from '../effects/portal/GlassPortalEffect.js'
-import { BlackholeEffect } from '../effects/blackhole/BlackholeEffect.js'
-import { VortexEffect } from '../effects/vortex/VortexEffect.js'
-import { VolumetricLight } from '../effects/volumetric/VolumetricLight.js'
-import { EnergyParticles } from '../effects/particles/EnergyParticles.js'
 
 export class SceneManager{
 
@@ -14,128 +11,201 @@ constructor(){
 
 this.scene=new THREE.Scene()
 
-this.scene.background=new THREE.Color(
-ValentineColors.backgroundBottom
-)
+this.scene.background=new THREE.Color(ValentineColors.background)
 
-this.createCoreObjects()
+this.scene.matrixAutoUpdate=true
 
-this.createLights()
+this.time=0
 
-this.createEffects()
+this.initialized=false
+
+this.init()
 
 }
 
-createCoreObjects(){
+init(){
 
-const geometry=new THREE.BoxGeometry(1,1,1)
+if(this.initialized)return
 
-const material=new THREE.MeshStandardMaterial({
+this.initialized=true
 
-color:new THREE.Color(
+this.initLighting()
+
+this.initPortal()
+
+this.initBlackhole()
+
+this.initParticles()
+
+this.initEnvironment()
+
+}
+
+initLighting(){
+
+this.lightingSystem=
+new LightingSystem(this.scene)
+
+}
+
+initPortal(){
+
+this.portal=
+new PortalEffect(this.scene)
+
+this.portal.setPosition(0,0,0)
+
+this.portal.setScale(1.0)
+
+}
+
+initBlackhole(){
+
+this.blackhole=
+new BlackholeEffect(this.scene)
+
+this.blackhole.setPosition(0,0,-5)
+
+this.blackhole.setScale(0.85)
+
+}
+
+initParticles(){
+
+this.heartParticles=
+new HeartParticlesSystem(
+this.scene,
+3000
+)
+
+}
+
+initEnvironment(){
+
+const geo=
+new THREE.SphereGeometry(
+50,
+64,
+64
+)
+
+const mat=
+new THREE.ShaderMaterial({
+
+side:THREE.BackSide,
+
+uniforms:{
+colorA:{
+value:
+new THREE.Color(
 ValentineColors.primary
-),
+)
+},
+colorB:{
+value:
+new THREE.Color(
+ValentineColors.accent
+)
+},
+time:{value:0}
+},
 
-emissive:new THREE.Color(
-ValentineColors.deep
-),
+vertexShader:`
+varying vec3 vPos;
+void main(){
+vPos=position;
+gl_Position=
+projectionMatrix*
+modelViewMatrix*
+vec4(position,1.0);
+}
+`,
 
-emissiveIntensity:1.8,
-
-roughness:0.25,
-
-metalness:0.9
+fragmentShader:`
+uniform vec3 colorA;
+uniform vec3 colorB;
+uniform float time;
+varying vec3 vPos;
+void main(){
+float h=
+normalize(vPos).y*
+0.5+0.5;
+vec3 color=
+mix(colorA,colorB,h);
+float pulse=
+sin(time*0.5)*0.1+0.9;
+gl_FragColor=
+vec4(color*pulse,1.0);
+}
+`
 
 })
 
-this.testMesh=new THREE.Mesh(
-geometry,
-material
+this.environmentMesh=
+new THREE.Mesh(geo,mat)
+
+this.scene.add(
+this.environmentMesh
 )
 
-this.scene.add(this.testMesh)
-
-}
-
-createLights(){
-
-this.keyLight=new THREE.DirectionalLight(
-ValentineColors.primarySoft,
-4.5
-)
-
-this.keyLight.position.set(5,10,5)
-
-this.scene.add(this.keyLight)
-
-this.fillLight=new THREE.PointLight(
-ValentineColors.secondarySoft,
-7.0,
-25
-)
-
-this.fillLight.position.set(-5,4,5)
-
-this.scene.add(this.fillLight)
-
-this.rimLight=new THREE.PointLight(
-ValentineColors.accentSoft,
-6.0,
-25
-)
-
-this.rimLight.position.set(0,6,-6)
-
-this.scene.add(this.rimLight)
-
-this.ambientLight=new THREE.AmbientLight(
-ValentineColors.deepSoft,
-0.7
-)
-
-this.scene.add(this.ambientLight)
-
-}
-
-createEffects(){
-
-this.portalEffect=
-new GlassPortalEffect(this.scene)
-
-this.blackholeEffect=
-new BlackholeEffect(this.scene)
-
-this.vortexEffect=
-new VortexEffect(this.scene)
-
-this.volumetricLight=
-new VolumetricLight(this.scene)
-
-this.energyParticles=
-new EnergyParticles(this.scene)
+this.environmentMaterial=
+mat
 
 }
 
 update(delta){
 
-this.testMesh.rotation.x+=delta*0.4
-this.testMesh.rotation.y+=delta*0.7
+this.time+=delta
 
-this.portalEffect.update(delta)
+if(this.portal)
+this.portal.update(delta)
 
-this.blackholeEffect.update(delta)
+if(this.blackhole)
+this.blackhole.update(delta)
 
-this.vortexEffect.update(delta)
+if(this.heartParticles)
+this.heartParticles.update(delta)
 
-this.volumetricLight.update(delta)
+if(this.lightingSystem)
+this.lightingSystem.update(delta)
 
-this.energyParticles.update(delta)
+if(this.environmentMaterial)
+this.environmentMaterial.uniforms.time.value=
+this.time
 
 }
 
 getScene(){
 
 return this.scene
+
+}
+
+dispose(){
+
+if(this.portal)
+this.portal.dispose()
+
+if(this.blackhole)
+this.blackhole.dispose()
+
+if(this.heartParticles)
+this.heartParticles.dispose()
+
+if(this.lightingSystem)
+this.lightingSystem.dispose()
+
+if(this.environmentMesh){
+
+this.scene.remove(
+this.environmentMesh
+)
+
+this.environmentMesh.geometry.dispose()
+
+this.environmentMesh.material.dispose()
+
+}
 
 }
 
