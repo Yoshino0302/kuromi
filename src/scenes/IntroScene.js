@@ -158,11 +158,16 @@ new THREE.BufferAttribute(this.galaxyColors,3)
 )
 this.galaxyMaterial=new THREE.PointsMaterial({
 size:0.7,
+map:this.particleTexture,
+alphaMap:this.particleTexture,
 vertexColors:true,
 transparent:true,
-opacity:0.9,
-depthWrite:false
+alphaTest:0.001,
+depthWrite:false,
+blending:THREE.AdditiveBlending,
+sizeAttenuation:true
 })
+this.galaxyMaterial.needsUpdate=true
 this.galaxyPoints=new THREE.Points(geometry,this.galaxyMaterial)
 this.scene.add(this.galaxyPoints)
 }
@@ -189,10 +194,15 @@ new THREE.BufferAttribute(this.snowPositions,3)
 this.snowMaterial=new THREE.PointsMaterial({
 color:0xffb6ff,
 size:0.6,
+map:this.particleTexture,
+alphaMap:this.particleTexture,
 transparent:true,
-opacity:0.8,
-depthWrite:false
+alphaTest:0.001,
+depthWrite:false,
+blending:THREE.AdditiveBlending,
+sizeAttenuation:true
 })
+this.snowMaterial.needsUpdate=true
 this.snowPoints=new THREE.Points(geometry,this.snowMaterial)
 this.scene.add(this.snowPoints)
 this._snowResetHeight=100
@@ -234,10 +244,15 @@ new THREE.BufferAttribute(this.dustPositions,3)
 this.dustMaterial=new THREE.PointsMaterial({
 color:0xff77aa,
 size:0.3,
+map:this.particleTexture,
+alphaMap:this.particleTexture,
 transparent:true,
-opacity:0.6,
-depthWrite:false
+alphaTest:0.001,
+depthWrite:false,
+blending:THREE.AdditiveBlending,
+sizeAttenuation:true
 })
+this.dustMaterial.needsUpdate=true
 this.dustPoints=new THREE.Points(geometry,this.dustMaterial)
 this.scene.add(this.dustPoints)
 this._dustRotYSpeed=0.02
