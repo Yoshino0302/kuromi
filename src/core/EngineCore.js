@@ -1,39 +1,63 @@
+import { Renderer } from '../renderer/Renderer.js'
+import { SceneManager } from '../scene/SceneManager.js'
+import { CameraSystem } from '../camera/CameraSystem.js'
+import { PerformanceMonitor } from '../systems/PerformanceMonitor.js'
 
-import {Clock} from '../utils/Clock.js'
-import {Logger} from '../utils/Logger.js'
-import {GPUResourceTracker} from '../systems/GPUResourceTracker.js'
-import {MemoryTracker} from '../systems/MemoryTracker.js'
-import {ResourceManager} from '../systems/ResourceManager.js'
-import {UpdateScheduler} from '../systems/UpdateScheduler.js'
-import {Renderer} from '../renderer/Renderer.js'
-import {SceneManager} from '../scenes/SceneManager.js'
-export class EngineCore{
-constructor(canvas){
-Logger.log("EngineCore init")
-this.clock=new Clock()
-this.gpu=new GPUResourceTracker()
-this.memory=new MemoryTracker()
-this.resources=new ResourceManager(this.gpu)
-this.scheduler=new UpdateScheduler()
-this.renderer=new Renderer(canvas,this.gpu)
-this.sceneManager=new SceneManager(this)
+export class Engine{
+
+constructor(){
+
+this.renderer=new Renderer()
+
+this.sceneManager=new SceneManager()
+
+this.cameraSystem=new CameraSystem()
+
+this.performanceMonitor=new PerformanceMonitor()
+
+this.lastTime=performance.now()
+
 this.running=false
+
 }
+
 start(){
+
 this.running=true
+
 this.loop()
+
 }
-loop(){
-if(!this.running)return
-const dt=this.clock.tick()
-this.scheduler.update(dt)
-this.sceneManager.update(dt)
-requestAnimationFrame(()=>this.loop())
-}
-dispose(){
+
+stop(){
+
 this.running=false
-this.resources.dispose()
-this.gpu.dispose()
-Logger.log("Engine disposed")
+
 }
+
+loop(){
+
+if(!this.running)return
+
+const now=performance.now()
+
+const delta=(now-this.lastTime)/1000
+
+this.lastTime=now
+
+this.performanceMonitor.update(delta)
+
+this.sceneManager.update(delta)
+
+this.cameraSystem.update(delta)
+
+this.renderer.render(
+this.sceneManager.getScene(),
+this.cameraSystem.getCamera()
+)
+
+requestAnimationFrame(()=>this.loop())
+
+}
+
 }
