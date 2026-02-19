@@ -1,1 +1,0 @@
-export class ResourceManager{constructor(gpu){this.gpu=gpu;this.resources=new Map()}add(k,r){this.resources.set(k,this.gpu.track(r));return r}get(k){return this.resources.get(k)}dispose(){for(const r of this.resources.values()){if(r.dispose)r.dispose()}this.resources.clear()}}
