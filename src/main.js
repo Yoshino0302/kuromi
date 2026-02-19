@@ -11,6 +11,9 @@ const renderer = new THREE.WebGLRenderer({
   stencil: false,
   powerPreference: "high-performance"
 })
+/* AAA TRANSPARENCY SORT SAFETY */
+renderer.sortObjects = true
+
 renderer.setSize(window.innerWidth, window.innerHeight)
 /* SAFE PIXEL RATIO LIMIT */
 renderer.setPixelRatio(
@@ -22,8 +25,8 @@ renderer.outputColorSpace = THREE.SRGBColorSpace
 renderer.toneMapping = THREE.ACESFilmicToneMapping
 renderer.toneMappingExposure = 1.35
 /* MODERN LIGHTING PIPELINE */
-renderer.physicallyCorrectLights = true
-renderer.useLegacyLights = false
+/* Three.js r155+ uses physically correct lighting by default */
+/* No legacy lighting flags needed */
 /* GPU SAFETY */
 renderer.info.autoReset = true
 renderer.shadowMap.enabled = false
