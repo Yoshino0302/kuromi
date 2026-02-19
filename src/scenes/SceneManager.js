@@ -1,4 +1,7 @@
 import * as THREE from 'https://jspm.dev/three'
+import { GlassPortalEffect } from '../effects/portal/GlassPortalEffect.js'
+import { BlackholeEffect } from '../effects/blackhole/BlackholeEffect.js'
+import { VortexEffect } from '../effects/vortex/VortexEffect.js'
 
 export class SceneManager{
 
@@ -12,6 +15,8 @@ this.createTestObject()
 
 this.createLights()
 
+this.createEffects()
+
 }
 
 createTestObject(){
@@ -21,46 +26,79 @@ const geometry=new THREE.BoxGeometry(1,1,1)
 const material=new THREE.MeshStandardMaterial({
 color:0xff00ff,
 emissive:0x220022,
-roughness:0.3,
-metalness:0.8
+roughness:0.25,
+metalness:0.9
 })
 
-this.mesh=new THREE.Mesh(
+this.testMesh=new THREE.Mesh(
 geometry,
 material
 )
 
-this.scene.add(this.mesh)
+this.testMesh.position.set(0,0,0)
+
+this.scene.add(this.testMesh)
 
 }
 
 createLights(){
 
-const light=new THREE.DirectionalLight(
+this.directionalLight=new THREE.DirectionalLight(
 0xffffff,
-3
+3.0
 )
 
-light.position.set(5,5,5)
+this.directionalLight.position.set(5,10,5)
 
-this.scene.add(light)
+this.scene.add(this.directionalLight)
 
-const ambient=new THREE.AmbientLight(
+this.ambientLight=new THREE.AmbientLight(
 0xffffff,
-0.3
+0.25
 )
 
-this.scene.add(ambient)
+this.scene.add(this.ambientLight)
+
+}
+
+createEffects(){
+
+this.portalEffect=
+new GlassPortalEffect(this.scene)
+
+this.blackholeEffect=
+new BlackholeEffect(this.scene)
+
+this.vortexEffect=
+new VortexEffect(this.scene)
 
 }
 
 update(delta){
 
-if(this.mesh){
+if(this.testMesh){
 
-this.mesh.rotation.x+=delta*0.5
+this.testMesh.rotation.x+=delta*0.5
 
-this.mesh.rotation.y+=delta*0.7
+this.testMesh.rotation.y+=delta*0.7
+
+}
+
+if(this.portalEffect){
+
+this.portalEffect.update(delta)
+
+}
+
+if(this.blackholeEffect){
+
+this.blackholeEffect.update(delta)
+
+}
+
+if(this.vortexEffect){
+
+this.vortexEffect.update(delta)
 
 }
 
