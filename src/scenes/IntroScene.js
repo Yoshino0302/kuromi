@@ -1316,3 +1316,4 @@ this.scene.remove(
 this.scene.children[0]
 )
 }
+}
