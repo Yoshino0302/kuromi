@@ -7,11 +7,37 @@ const canvas = document.getElementById('bg')
 
 const renderer = new THREE.WebGLRenderer({
   canvas,
-  antialias: true
+  antialias: true,
+  alpha: false,
+  depth: true,
+  stencil: false,
+  powerPreference: "high-performance"
 })
 
 renderer.setSize(window.innerWidth, window.innerHeight)
-renderer.setPixelRatio(window.devicePixelRatio)
+
+/* SAFE PIXEL RATIO LIMIT */
+renderer.setPixelRatio(
+  Math.min(window.devicePixelRatio, 2)
+)
+
+/* MODERN COLOR PIPELINE */
+renderer.outputColorSpace = THREE.SRGBColorSpace
+
+/* CINEMATIC TONE MAPPING */
+renderer.toneMapping = THREE.ACESFilmicToneMapping
+renderer.toneMappingExposure = 1.35
+
+/* MODERN LIGHTING PIPELINE */
+renderer.physicallyCorrectLights = true
+renderer.useLegacyLights = false
+
+/* GPU SAFETY */
+renderer.info.autoReset = true
+
+renderer.shadowMap.enabled = false
+renderer.shadowMap.type = THREE.PCFSoftShadowMap
+
 
 const camera = new THREE.PerspectiveCamera(
   75,
@@ -23,7 +49,12 @@ const camera = new THREE.PerspectiveCamera(
 window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight
   camera.updateProjectionMatrix()
-  renderer.setSize(window.innerWidth, window.innerHeight)
+ renderer.setSize(window.innerWidth, window.innerHeight)
+
+renderer.setPixelRatio(
+  Math.min(window.devicePixelRatio, 2)
+)
+
 })
 
 const manager = new SceneManager(renderer, camera)
@@ -41,8 +72,18 @@ document.getElementById('enterBtn').addEventListener('click', () => {
 })
 
 function animate() {
+
   requestAnimationFrame(animate)
+
   manager.update()
+
+  /* FORCE GPU COMMAND FLUSH SAFETY */
+  renderer.render(
+    manager.currentScene.scene,
+    camera
+  )
+
 }
+
 
 animate()
