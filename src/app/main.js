@@ -77,21 +77,21 @@ class MainEngine {
             )
         this.onResize()
     }
-    initManagers() {
-        this.engineCore =
-            new EngineCore(
-               this.canvas
-            )
-        this.resourceManager =
-            new ResourceManager()
-        this.memoryTracker =
-            new MemoryTracker()
-        this.sceneManager =
-            new SceneManager(
-                this.engineCore,
-                this.camera
-            )
-    }
+ initManagers() {
+    this.engineCore =
+        new EngineCore(
+            this.canvas
+        )
+    this.resourceManager =
+        new ResourceManager()
+    this.memoryTracker =
+        new MemoryTracker()
+    this.sceneManager =
+        new SceneManager(
+            this.engineCore,
+            this.camera
+        )
+}
     initScenes() {
         this.introScene =
             new IntroScene(
