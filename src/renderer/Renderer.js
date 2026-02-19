@@ -6,6 +6,16 @@ constructor(){
 
 this.canvas=document.getElementById('engine-canvas')
 
+if(!this.canvas){
+
+this.canvas=document.createElement('canvas')
+
+this.canvas.id='engine-canvas'
+
+document.body.appendChild(this.canvas)
+
+}
+
 this.renderer=new THREE.WebGLRenderer({
 canvas:this.canvas,
 antialias:true,
@@ -20,6 +30,7 @@ this.configureRenderer()
 this.resize()
 
 }
+
 
 configureRenderer(){
 
