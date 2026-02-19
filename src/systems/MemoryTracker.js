@@ -1,1 +1,0 @@
-export class MemoryTracker{constructor(){this.count=0}allocate(){this.count++}free(){this.count=Math.max(0,this.count-1)}report(){return this.count}}
