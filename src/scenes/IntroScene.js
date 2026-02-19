@@ -82,19 +82,23 @@ this.directionalLight.castShadow=false
 this.scene.add(this.directionalLight)
 }
 update(delta){
-this.deltaTime=delta
+if(delta<=0)return
+if(delta>0.05)delta=0.05
 this.elapsedTime+=delta
-this._updateAccumulator+=delta
-if(this._updateAccumulator>this._fixedTimeStep*this._maxSubSteps){
-this._updateAccumulator=this._fixedTimeStep*this._maxSubSteps
+const time=this.elapsedTime
+this.updateFPS(delta)
+this.beatTime+=delta*3.2
+const beat=Math.sin(this.beatTime)
+const beatScale=1+beat*0.085
+this.heartMesh.scale.setScalar(beatScale)
+this.updateSnow(delta)
+this.updateDust(time)
+this.updateGalaxy(time)
+this.updateFireworks(delta)
+this.updateShockwave(delta)
+if(this.skyMaterial){
+this.skyMaterial.uniforms.uTime.value=time
 }
-let steps=0
-while(this._updateAccumulator>=this._fixedTimeStep&&steps<this._maxSubSteps){
-this._fixedUpdate(this._fixedTimeStep)
-this._updateAccumulator-=this._fixedTimeStep
-steps++
-}
-this._postUpdate(delta)
 }
 _fixedUpdate(dt){
 this.updateFPS(dt)
