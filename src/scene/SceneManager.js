@@ -7,17 +7,21 @@ import { LightingSystem } from '../lighting/LightingSystem.js'
 
 export class SceneManager{
 
-constructor(engine){
+constructor(options={}){
 
-this.engine=engine
-this.renderer=engine.renderer
-this.camera=engine.camera
+this.options=options
+this.engine=options.engine||null
+this.debug=options.debug===true
+
+this.state='constructed'
+this.initialized=false
+this.disposed=false
 
 this.scene=new THREE.Scene()
 
 this.clock=new THREE.Clock()
 
-this.initialized=false
+this.subsystems=new Set()
 
 this.portal=null
 this.blackhole=null
@@ -39,16 +43,24 @@ ValentineColors.fog,
 
 }
 
-init(){
+async init(){
 
 if(this.initialized)return
+
+this.state='initializing'
 
 this._initLighting()
 this._initPortal()
 this._initBlackhole()
 this._initHearts()
 
+this._registerSubsystem(this.lighting)
+this._registerSubsystem(this.portal)
+this._registerSubsystem(this.blackhole)
+this._registerSubsystem(this.hearts)
+
 this.initialized=true
+this.state='initialized'
 
 }
 
@@ -56,7 +68,7 @@ _initLighting(){
 
 this.lighting=new LightingSystem(
 this.scene,
-this.camera,
+this._getCamera(),
 {
 primary:ValentineColors.primary,
 secondary:ValentineColors.secondary,
@@ -70,7 +82,7 @@ _initPortal(){
 
 this.portal=new GlassPortalEffect({
 scene:this.scene,
-camera:this.camera,
+camera:this._getCamera(),
 colors:ValentineColors
 })
 
@@ -80,7 +92,7 @@ _initBlackhole(){
 
 this.blackhole=new BlackholeEffect({
 scene:this.scene,
-camera:this.camera,
+camera:this._getCamera(),
 colors:ValentineColors
 })
 
@@ -98,49 +110,163 @@ count:600
 
 }
 
-update(){
+_registerSubsystem(system){
 
-if(!this.initialized)return
+if(!system)return
 
-const delta=this.clock.getDelta()
-const elapsed=this.clock.elapsedTime
-
-if(this.portal)this.portal.update(delta,elapsed)
-
-if(this.blackhole)this.blackhole.update(delta,elapsed)
-
-if(this.hearts)this.hearts.update(delta,elapsed)
-
-if(this.lighting)this.lighting.update(delta,elapsed)
+this.subsystems.add(system)
 
 }
 
-render(){
+_unregisterSubsystem(system){
 
-this.renderer.render(
-this.scene,
-this.camera
-)
+if(!system)return
+
+this.subsystems.delete(system)
+
+}
+
+_getCamera(){
+
+if(this.engine?.getCamera){
+return this.engine.getCamera()
+}
+
+return null
+
+}
+
+update(delta,elapsed){
+
+if(this.disposed)return
+
+if(!this.initialized){
+
+this.init()
+
+}
+
+if(delta===undefined){
+
+delta=this.clock.getDelta()
+elapsed=this.clock.elapsedTime
+
+}else if(elapsed===undefined){
+
+elapsed=this.clock.elapsedTime
+
+}
+
+for(const system of this.subsystems){
+
+if(system?.update){
+
+system.update(delta,elapsed)
+
+}
+
+}
 
 }
 
 resize(width,height){
 
-if(this.portal&&this.portal.resize)this.portal.resize(width,height)
+if(this.disposed)return
 
-if(this.blackhole&&this.blackhole.resize)this.blackhole.resize(width,height)
+for(const system of this.subsystems){
+
+if(system?.resize){
+
+system.resize(width,height)
+
+}
+
+}
+
+}
+
+add(object){
+
+this.scene.add(object)
+
+}
+
+remove(object){
+
+this.scene.remove(object)
+
+}
+
+clear(){
+
+const toRemove=[]
+
+this.scene.traverse(child=>{
+if(child.isMesh||child.isPoints||child.isLine){
+toRemove.push(child)
+}
+})
+
+for(const obj of toRemove){
+
+this.scene.remove(obj)
+
+if(obj.geometry)obj.geometry.dispose()
+
+if(obj.material){
+
+if(Array.isArray(obj.material)){
+
+for(const mat of obj.material){
+mat.dispose()
+}
+
+}else{
+obj.material.dispose()
+}
+
+}
+
+}
+
+}
+
+getScene(){
+
+return this.scene
 
 }
 
 dispose(){
 
-if(this.portal)this.portal.dispose()
+if(this.disposed)return
 
-if(this.blackhole)this.blackhole.dispose()
+this.state='disposing'
 
-if(this.hearts)this.hearts.dispose()
+for(const system of this.subsystems){
 
-if(this.lighting)this.lighting.dispose()
+if(system?.dispose){
+
+system.dispose()
+
+}
+
+}
+
+this.subsystems.clear()
+
+this.clear()
+
+this.scene=null
+
+this.portal=null
+this.blackhole=null
+this.hearts=null
+this.lighting=null
+
+this.initialized=false
+this.disposed=true
+this.state='disposed'
 
 }
 
