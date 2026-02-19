@@ -1,1 +1,0 @@
-export class Logger{static log(...a){console.log("[Engine]",...a)}static warn(...a){console.warn("[Engine]",...a)}static error(...a){console.error("[Engine]",...a)}}
