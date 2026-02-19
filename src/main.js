@@ -4,8 +4,10 @@ const ENGINE_STATES={
 IDLE:0,
 BOOTING:1,
 RUNNING:2,
-SHUTTING_DOWN:3,
-DISPOSED:4
+SUSPENDED:3,
+SHUTTING_DOWN:4,
+DISPOSED:5,
+FAILED:6
 }
 
 let engineInstance=null
@@ -24,11 +26,16 @@ canvas:null,
 maxPixelRatio:Math.min(window.devicePixelRatio||1,2),
 suspendOnHidden:true,
 resumeOnVisible:true,
-recoverContext:true
+recoverContext:true,
+bootTimeout:30000,
+shutdownTimeout:10000
 }
 
-let visibilityState=document.visibilityState
 let contextLost=false
+let visibilityState=document.visibilityState
+
+let bootToken=0
+let shutdownToken=0
 
 function emit(event,data){
 for(const cb of engineEvents){
@@ -98,156 +105,307 @@ canvas.style.width='100%'
 canvas.style.height='100%'
 canvas.style.display='block'
 canvas.style.outline='none'
+canvas.style.touchAction='none'
 canvas.tabIndex=-1
 document.body.appendChild(canvas)
 return canvas
 }
 
 function installContextRecovery(canvas){
+
 if(!engineConfig.recoverContext)return
+
 canvas.addEventListener('webglcontextlost',(event)=>{
+
 event.preventDefault()
+
 contextLost=true
+
+engineState=ENGINE_STATES.SUSPENDED
+
 emit('context:lost',null)
+
 console.warn('[KUROMI ENGINE] WebGL context lost')
-})
+
+},{passive:false})
+
 canvas.addEventListener('webglcontextrestored',()=>{
+
 contextLost=false
+
 emit('context:restored',null)
+
 restartEngine()
+
 console.warn('[KUROMI ENGINE] WebGL context restored')
-})
+
+},{passive:true})
+
 }
 
-async function createEngine(){
+async function createEngine(token){
+
 const canvas=resolveCanvas()
+
 installContextRecovery(canvas)
+
 const engine=new Engine({
 canvas,
 config:engineConfig,
 debug:engineConfig.debug,
 maxPixelRatio:engineConfig.maxPixelRatio
 })
-if(engine.init)await engine.init()
-if(engine.start)await engine.start()
+
+await engine.init()
+
+if(token!==bootToken){
+await engine.shutdown?.()
+throw new Error('Boot invalidated')
+}
+
+await engine.start()
+
 return engine
+
 }
 
 async function bootInternal(){
+
 if(engineInstance)return engineInstance
+
+bootToken++
+
+const token=bootToken
+
 engineState=ENGINE_STATES.BOOTING
+
 emit('boot:start',null)
+
 try{
-engineInstance=await createEngine()
-exposeGlobal(engineInstance)
-engineState=ENGINE_STATES.RUNNING
-emit('boot:complete',engineInstance)
-return engineInstance
-}catch(err){
-engineInstance=null
-engineState=ENGINE_STATES.IDLE
-emit('boot:error',err)
-console.error('[KUROMI ENGINE] Boot failed:',err)
-throw err
+
+const engine=await Promise.race([
+createEngine(token),
+new Promise((_,reject)=>setTimeout(()=>{
+reject(new Error('Boot timeout'))
+},engineConfig.bootTimeout))
+])
+
+if(token!==bootToken){
+await engine.shutdown?.()
+throw new Error('Boot invalidated')
 }
+
+engineInstance=engine
+
+exposeGlobal(engineInstance)
+
+engineState=ENGINE_STATES.RUNNING
+
+emit('boot:complete',engineInstance)
+
+return engineInstance
+
+}catch(err){
+
+engineInstance=null
+
+engineState=ENGINE_STATES.FAILED
+
+emit('boot:error',err)
+
+console.error('[KUROMI ENGINE] Boot failed:',err)
+
+throw err
+
+}
+
 }
 
 export async function bootEngine(){
+
 if(engineState===ENGINE_STATES.RUNNING)return engineInstance
+
 if(bootPromise)return bootPromise
-bootPromise=new Promise(async(resolve,reject)=>{
-try{
+
+bootPromise=(async()=>{
+
 if(document.visibilityState==='hidden'){
+
+await new Promise(resolve=>{
 const onVisible=()=>{
 document.removeEventListener('visibilitychange',onVisible)
-bootInternal().then(resolve).catch(reject)
+resolve()
 }
 document.addEventListener('visibilitychange',onVisible,{once:true})
-return
+})
+
 }
-const engine=await bootInternal()
-resolve(engine)
-}catch(e){
-reject(e)
+
+return bootInternal()
+
+})()
+
+try{
+return await bootPromise
 }finally{
 bootPromise=null
 }
-})
-return bootPromise
+
 }
 
 export async function shutdownEngine(){
+
 if(!engineInstance)return
+
 if(shutdownPromise)return shutdownPromise
+
+shutdownToken++
+
+const token=shutdownToken
+
 engineState=ENGINE_STATES.SHUTTING_DOWN
-shutdownPromise=new Promise(async(resolve)=>{
+
+shutdownPromise=(async()=>{
+
 emit('shutdown:start',engineInstance)
-try{
-if(engineInstance.stop)engineInstance.stop()
-if(engineInstance.shutdown)await engineInstance.shutdown()
-if(engineInstance.dispose)engineInstance.dispose()
-}catch(e){
-console.warn('[KUROMI ENGINE] Shutdown warning:',e)
-}
-clearGlobal()
+
+const engine=engineInstance
+
 engineInstance=null
+
+clearGlobal()
+
+try{
+
+await Promise.race([
+(async()=>{
+engine.stop?.()
+await engine.shutdown?.()
+engine.dispose?.()
+})(),
+new Promise((_,reject)=>setTimeout(()=>{
+reject(new Error('Shutdown timeout'))
+},engineConfig.shutdownTimeout))
+])
+
+}catch(e){
+
+console.warn('[KUROMI ENGINE] Shutdown warning:',e)
+
+}
+
+if(token!==shutdownToken)return
+
 engineState=ENGINE_STATES.DISPOSED
+
 emit('shutdown:complete',null)
+
+})()
+
+try{
+await shutdownPromise
+}finally{
 shutdownPromise=null
-resolve()
-})
-return shutdownPromise
+}
+
 }
 
 export async function restartEngine(){
+
 await shutdownEngine()
+
 engineState=ENGINE_STATES.IDLE
+
 return bootEngine()
+
 }
 
 function installVisibilityHandler(){
+
 document.addEventListener('visibilitychange',()=>{
+
 const newState=document.visibilityState
-emit('visibility',newState)
-if(!engineInstance)return
-if(engineConfig.suspendOnHidden&&newState==='hidden'){
-if(engineInstance.pause)engineInstance.pause()
-}
-if(engineConfig.resumeOnVisible&&newState==='visible'){
-if(engineInstance.resume)engineInstance.resume()
-}
+
 visibilityState=newState
+
+emit('visibility',newState)
+
+const engine=engineInstance
+
+if(!engine)return
+
+if(engineConfig.suspendOnHidden&&newState==='hidden'){
+
+engine.pause?.()
+
+engineState=ENGINE_STATES.SUSPENDED
+
+}
+
+if(engineConfig.resumeOnVisible&&newState==='visible'&&!contextLost){
+
+engine.resume?.()
+
+engineState=ENGINE_STATES.RUNNING
+
+}
+
 })
+
 }
 
 function installLifecycleHooks(){
-window.addEventListener('beforeunload',shutdownEngine)
-window.addEventListener('pagehide',shutdownEngine)
+
+window.addEventListener('beforeunload',shutdownEngine,{passive:true})
+
+window.addEventListener('pagehide',shutdownEngine,{passive:true})
+
 window.addEventListener('error',(event)=>{
+
 emit('error',event.error)
+
 console.error('[KUROMI ENGINE] Runtime error:',event.error)
+
 })
+
 window.addEventListener('unhandledrejection',(event)=>{
+
 emit('rejection',event.reason)
+
 console.error('[KUROMI ENGINE] Promise rejection:',event.reason)
+
 })
+
 }
 
 function installHotReloadGuard(){
+
 if(import.meta&&import.meta.hot){
+
 import.meta.hot.dispose(()=>{
+
 shutdownEngine()
+
 })
+
 }
+
 }
 
 function autoBoot(){
+
 if(!engineConfig.autoStart)return
+
 if(document.readyState==='loading'){
+
 document.addEventListener('DOMContentLoaded',bootEngine,{once:true})
+
 }else{
+
 bootEngine()
+
 }
+
 }
 
 installLifecycleHooks()
