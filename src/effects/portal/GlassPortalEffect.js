@@ -1,4 +1,5 @@
 import * as THREE from 'https://jspm.dev/three'
+import { ValentineColors } from '../../config/ValentineColors.js'
 
 export class GlassPortalEffect{
 
@@ -15,10 +16,10 @@ this.createPortal()
 createPortal(){
 
 const geometry=new THREE.TorusGeometry(
-1.5,
-0.05,
-128,
-256
+2,
+0.15,
+64,
+128
 )
 
 const material=new THREE.ShaderMaterial({
@@ -54,17 +55,16 @@ varying vec2 vUv;
 void main(){
 
 float glow=
-sin(vUv.x*10.0+time*2.0)*0.5+0.5;
+sin(vUv.x*6.283+time*2.0)*0.5+0.5;
 
-vec3 color=
-mix(
-vec3(0.2,0.6,1.0),
-vec3(1.0,0.2,1.0),
+vec3 color=mix(
+vec3(1.0,0.3,0.6),
+vec3(1.0,0.0,0.3),
 glow
 );
 
 gl_FragColor=
-vec4(color,0.8);
+vec4(color,1.0);
 
 }
 `
@@ -75,6 +75,8 @@ this.mesh=new THREE.Mesh(
 geometry,
 material
 )
+
+this.mesh.position.x=-3
 
 this.scene.add(this.mesh)
 
@@ -87,7 +89,7 @@ this.time+=delta
 this.mesh.material.uniforms.time.value=
 this.time
 
-this.mesh.rotation.z+=delta*0.5
+this.mesh.rotation.z+=delta*0.6
 
 }
 
