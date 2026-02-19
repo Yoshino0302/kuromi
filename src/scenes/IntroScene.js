@@ -3,6 +3,10 @@ export class IntroScene {
 constructor(camera){
 this.camera=camera
 this.scene=new THREE.Scene()
+this.textureLoader=new THREE.TextureLoader()
+this.particleTexture=this.textureLoader.load(
+'https://threejs.org/examples/textures/sprites/circle.png'
+)
 /* =========================
    CORE TIMING
 ========================= */
@@ -257,6 +261,8 @@ const count=(200*this.densityFactor)|0
 const geometry=new THREE.BufferGeometry()
 const positions=new Float32Array(count*3)
 const velocities=new Float32Array(count*3)
+/* UPGRADE: add color buffer (required for vertexColors) */
+const colors=new Float32Array(count*3)
 for(let i=0;i<count;i++){
 const stride=i*3
 let dx=0,dy=0,dz=0
@@ -294,18 +300,33 @@ const speed=Math.random()*20+20
 velocities[stride]=dx*speed
 velocities[stride+1]=dy*speed
 velocities[stride+2]=dz*speed
+/* UPGRADE: cinematic pink/purple gradient */
+colors[stride]=1
+colors[stride+1]=0.3+Math.random()*0.4
+colors[stride+2]=0.6+Math.random()*0.4
 }
 geometry.setAttribute(
 'position',
 new THREE.BufferAttribute(positions,3)
 )
+/* UPGRADE: enable vertex color */
+geometry.setAttribute(
+'color',
+new THREE.BufferAttribute(colors,3)
+)
+/* keep your color logic intact */
 this._tempColor.setHSL(Math.random(),1,0.6)
+/* UPGRADE: proper cinematic material */
 const material=new THREE.PointsMaterial({
-color:this._tempColor.clone(),
-size:0.8,
+size:0.15,
+map:this.particleTexture,
 transparent:true,
-opacity:1,
-depthWrite:false
+alphaTest:0.001,
+depthWrite:false,
+blending:THREE.AdditiveBlending,
+vertexColors:true,
+sizeAttenuation:true,
+opacity:1
 })
 const points=new THREE.Points(geometry,material)
 points.position.set(
@@ -343,10 +364,12 @@ velocities[stride+1]-=gravity*delta
 }
 fw.points.geometry.attributes.position.needsUpdate=true
 fw.life-=delta
-/* Smooth fade (ease out cubic) */
+/* keep your cubic easing */
 const normalized=fw.life/fw.maxLife
 const eased=normalized*normalized*normalized
 fw.points.material.opacity=eased
+/* UPGRADE: cinematic size fade */
+fw.points.material.size=0.15*(0.5+normalized*0.5)
 if(fw.life<=0){
 this.scene.remove(fw.points)
 fw.points.geometry.dispose()
@@ -354,7 +377,7 @@ fw.points.material.dispose()
 fireworks.splice(i,1)
 }
 }
-/* Accumulator-based spawn (stable cinematic rate) */
+/* keep your accumulator logic */
 this._fireworkSpawnAccumulator+=delta
 const spawnInterval=this._fireworkBaseSpawnRate/this.densityFactor
 while(this._fireworkSpawnAccumulator>=spawnInterval){
