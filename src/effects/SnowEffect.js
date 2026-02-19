@@ -1,76 +1,128 @@
 import * as THREE from 'https://jspm.dev/three'
-
-export function initPortal(scene) {
-
-  const geometry = new THREE.TorusGeometry(10, 1.2, 256, 512)
-
-  const material = new THREE.ShaderMaterial({
-    uniforms: {
-      uTime: { value: 0 },
-      uColor1: { value: new THREE.Color(0xff00ff) },
-      uColor2: { value: new THREE.Color(0x9900ff) }
-    },
-    vertexShader: `
-      uniform float uTime;
-      varying vec2 vUv;
-      varying vec3 vNormal;
-
-      void main() {
-        vUv = uv;
-        vNormal = normal;
-
-        vec3 pos = position;
-
-        float wave = sin(pos.x * 5.0 + uTime * 3.0) * 0.4;
-        float twist = sin(pos.y * 6.0 + uTime * 4.0) * 0.3;
-
-        pos += normal * (wave + twist);
-
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
-      }
-    `,
-    fragmentShader: `
-      uniform float uTime;
-      uniform vec3 uColor1;
-      uniform vec3 uColor2;
-
-      varying vec2 vUv;
-      varying vec3 vNormal;
-
-      void main() {
-
-        vec2 uv = vUv - 0.5;
-        float r = length(uv);
-        float angle = atan(uv.y, uv.x);
-
-        float swirl = sin(r * 20.0 - uTime * 5.0 + angle * 4.0);
-        float ring = sin(r * 50.0 - uTime * 8.0);
-
-        float intensity = smoothstep(0.5, 0.0, r);
-        intensity += swirl * 0.5;
-        intensity += ring * 0.4;
-
-        vec3 color = mix(uColor2, uColor1, intensity);
-
-        float fresnel = pow(1.0 - dot(normalize(vNormal), vec3(0.0, 0.0, 1.0)), 3.0);
-        color += uColor1 * fresnel * 3.0;
-
-        gl_FragColor = vec4(color, 1.0);
-      }
-    `,
-    transparent: true,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false
-  })
-
-  const portal = new THREE.Mesh(geometry, material)
-  scene.add(portal)
-
-  function update(time) {
-    material.uniforms.uTime.value = time
-    portal.rotation.x += 0.004
-    portal.rotation.y += 0.006
-  }
-
-  return { portal, update }
+export class SnowEffect {
+    constructor(scene, resourceManager, memoryTracker) {
+        this.scene = scene
+        this.resourceManager = resourceManager
+        this.memoryTracker = memoryTracker
+        this.points = null
+        this.geometry = null
+        this.material = null
+        this.positionAttr = null
+        this.positions = null
+        this.velocities = null
+        this.drift = null
+        this.phase = null
+        this.count = 2200
+        this.area = 220
+        this.height = 140
+        this.floor = -20
+        this.resetHeight = this.height
+        this.turbulenceSpeed = 0.6
+        this.elapsedTime = 0
+    }
+    init() {
+        const texture =
+            this.resourceManager.loadTexture(
+                'https://threejs.org/examples/textures/sprites/circle.png'
+            )
+        this.positions =
+            new Float32Array(this.count * 3)
+        this.velocities =
+            new Float32Array(this.count)
+        this.drift =
+            new Float32Array(this.count)
+        this.phase =
+            new Float32Array(this.count)
+        for (let i = 0; i < this.count; i++) {
+            const i3 = i * 3
+            this.positions[i3] =
+                (Math.random() - 0.5) * this.area
+            this.positions[i3+1] =
+                Math.random() * this.height
+            this.positions[i3+2] =
+                (Math.random() - 0.5) * this.area
+            this.velocities[i] =
+                4 + Math.random() * 6
+            this.drift[i] =
+                (Math.random() - 0.5) * 2
+            this.phase[i] =
+                Math.random() * Math.PI * 2
+        }
+        this.geometry =
+            this.memoryTracker.trackGeometry(
+                new THREE.BufferGeometry()
+            )
+        this.positionAttr =
+            new THREE.BufferAttribute(
+                this.positions,
+                3
+            )
+        this.positionAttr.setUsage(
+            THREE.DynamicDrawUsage
+        )
+        this.geometry.setAttribute(
+            'position',
+            this.positionAttr
+        )
+        this.material =
+            this.memoryTracker.trackMaterial(
+                new THREE.PointsMaterial({
+                    map: texture,
+                    color: 0xffddff,
+                    size: 1.2,
+                    transparent: true,
+                    opacity: 0.9,
+                    depthWrite: false,
+                    blending: THREE.AdditiveBlending,
+                    sizeAttenuation: true,
+                    alphaTest: 0.001
+                })
+            )
+        this.points =
+            new THREE.Points(
+                this.geometry,
+                this.material
+            )
+        this.points.frustumCulled = false
+        this.scene.add(this.points)
+    }
+    update(delta) {
+        this.elapsedTime += delta
+        const pos = this.positions
+        const vel = this.velocities
+        const drift = this.drift
+        const phase = this.phase
+        const count = this.count
+        const floor = this.floor
+        const reset = this.resetHeight
+        const area = this.area
+        const turbTime =
+            this.elapsedTime * this.turbulenceSpeed
+        for (let i = 0; i < count; i++) {
+            const i3 = i * 3
+            pos[i3+1] -= vel[i] * delta
+            pos[i3] +=
+                Math.sin(turbTime + phase[i])
+                * drift[i] * delta * 5
+            pos[i3+2] +=
+                Math.cos(turbTime * 0.7 + phase[i])
+                * drift[i] * delta * 3
+            if (pos[i3+1] < floor) {
+                pos[i3] =
+                    (Math.random() - 0.5) * area
+                pos[i3+1] =
+                    reset
+                pos[i3+2] =
+                    (Math.random() - 0.5) * area
+            }
+        }
+        this.positionAttr.needsUpdate = true
+    }
+    dispose() {
+        if (!this.points) return
+        this.scene.remove(this.points)
+        this.geometry.dispose()
+        this.material.dispose()
+        this.points = null
+    }
 }
