@@ -1,5 +1,7 @@
 import * as THREE from 'https://jspm.dev/three'
 
+import { ValentineColors } from '../config/ValentineColors.js'
+
 import { GlassPortalEffect } from '../effects/portal/GlassPortalEffect.js'
 import { BlackholeEffect } from '../effects/blackhole/BlackholeEffect.js'
 import { VortexEffect } from '../effects/vortex/VortexEffect.js'
@@ -12,7 +14,9 @@ constructor(){
 
 this.scene=new THREE.Scene()
 
-this.scene.background=new THREE.Color(0x000000)
+this.scene.background=new THREE.Color(
+ValentineColors.backgroundBottom
+)
 
 this.createCoreObjects()
 
@@ -27,10 +31,21 @@ createCoreObjects(){
 const geometry=new THREE.BoxGeometry(1,1,1)
 
 const material=new THREE.MeshStandardMaterial({
-color:0xff00ff,
-emissive:0x220022,
+
+color:new THREE.Color(
+ValentineColors.primary
+),
+
+emissive:new THREE.Color(
+ValentineColors.deep
+),
+
+emissiveIntensity:1.8,
+
 roughness:0.25,
+
 metalness:0.9
+
 })
 
 this.testMesh=new THREE.Mesh(
@@ -38,26 +53,44 @@ geometry,
 material
 )
 
-this.testMesh.position.set(0,0,0)
-
 this.scene.add(this.testMesh)
 
 }
 
 createLights(){
 
-this.directionalLight=new THREE.DirectionalLight(
-0xffffff,
-3.0
+this.keyLight=new THREE.DirectionalLight(
+ValentineColors.primarySoft,
+4.5
 )
 
-this.directionalLight.position.set(5,10,5)
+this.keyLight.position.set(5,10,5)
 
-this.scene.add(this.directionalLight)
+this.scene.add(this.keyLight)
+
+this.fillLight=new THREE.PointLight(
+ValentineColors.secondarySoft,
+7.0,
+25
+)
+
+this.fillLight.position.set(-5,4,5)
+
+this.scene.add(this.fillLight)
+
+this.rimLight=new THREE.PointLight(
+ValentineColors.accentSoft,
+6.0,
+25
+)
+
+this.rimLight.position.set(0,6,-6)
+
+this.scene.add(this.rimLight)
 
 this.ambientLight=new THREE.AmbientLight(
-0xffffff,
-0.25
+ValentineColors.deepSoft,
+0.7
 )
 
 this.scene.add(this.ambientLight)
@@ -85,42 +118,18 @@ new EnergyParticles(this.scene)
 
 update(delta){
 
-if(this.testMesh){
-
-this.testMesh.rotation.x+=delta*0.5
+this.testMesh.rotation.x+=delta*0.4
 this.testMesh.rotation.y+=delta*0.7
-
-}
-
-if(this.portalEffect){
 
 this.portalEffect.update(delta)
 
-}
-
-if(this.blackholeEffect){
-
 this.blackholeEffect.update(delta)
-
-}
-
-if(this.vortexEffect){
 
 this.vortexEffect.update(delta)
 
-}
-
-if(this.volumetricLight){
-
 this.volumetricLight.update(delta)
 
-}
-
-if(this.energyParticles){
-
 this.energyParticles.update(delta)
-
-}
 
 }
 
