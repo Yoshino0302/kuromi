@@ -197,7 +197,6 @@ this._particleMaterialPool.push(material)
 material.dispose()
 }
 }
-}
 /* =========================
    GALAXY SYSTEM (AAA CINEMATIC)
 ========================= */
