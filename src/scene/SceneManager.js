@@ -5,6 +5,14 @@ import { BlackholeEffect } from '../effects/blackhole/BlackholeEffect.js'
 import { HeartParticlesSystem } from '../effects/HeartParticlesSystem.js'
 import { LightingSystem } from '../lighting/LightingSystem.js'
 
+const SCENE_STATE={
+CONSTRUCTED:0,
+INITIALIZING:1,
+INITIALIZED:2,
+DISPOSING:3,
+DISPOSED:4
+}
+
 export class SceneManager{
 
 constructor(options={}){
@@ -13,28 +21,35 @@ this.options=options
 this.engine=options.engine||null
 this.debug=options.debug===true
 
-this.state='constructed'
+this.state=SCENE_STATE.CONSTRUCTED
+
 this.initialized=false
 this.disposed=false
 
 this.scene=new THREE.Scene()
 
-this.clock=new THREE.Clock()
+this.clock=new THREE.Clock(false)
 
 this.subsystems=new Set()
+
+this.objects=new Set()
 
 this.portal=null
 this.blackhole=null
 this.hearts=null
 this.lighting=null
 
-this._setupSceneBase()
+this._initPromise=null
+
+this._configureScene()
 
 }
 
-_setupSceneBase(){
+_configureScene(){
 
-this.scene.background=new THREE.Color(ValentineColors.background)
+this.scene.background=new THREE.Color(
+ValentineColors.background
+)
 
 this.scene.fog=new THREE.FogExp2(
 ValentineColors.fog,
@@ -45,40 +60,55 @@ ValentineColors.fog,
 
 async init(){
 
-if(this.initialized)return
+if(this.initialized)return this
+if(this._initPromise)return this._initPromise
 
-this.state='initializing'
+this._initPromise=(async()=>{
 
-this._initLighting()
-this._initPortal()
-this._initBlackhole()
-this._initHearts()
+this.state=SCENE_STATE.INITIALIZING
 
-this._registerSubsystem(this.lighting)
-this._registerSubsystem(this.portal)
-this._registerSubsystem(this.blackhole)
-this._registerSubsystem(this.hearts)
+this._emitDebug('Scene init start')
+
+this._createLighting()
+
+this._createPortal()
+
+this._createBlackhole()
+
+this._createHearts()
+
+this._register(this.lighting)
+this._register(this.portal)
+this._register(this.blackhole)
+this._register(this.hearts)
+
+this.clock.start()
 
 this.initialized=true
-this.state='initialized'
+
+this.state=SCENE_STATE.INITIALIZED
+
+this._emitDebug('Scene init complete')
+
+return this
+
+})()
+
+return this._initPromise
 
 }
 
-_initLighting(){
+_createLighting(){
 
 this.lighting=new LightingSystem(
 this.scene,
 this._getCamera(),
-{
-primary:ValentineColors.primary,
-secondary:ValentineColors.secondary,
-accent:ValentineColors.accent
-}
+ValentineColors
 )
 
 }
 
-_initPortal(){
+_createPortal(){
 
 this.portal=new GlassPortalEffect({
 scene:this.scene,
@@ -88,7 +118,7 @@ colors:ValentineColors
 
 }
 
-_initBlackhole(){
+_createBlackhole(){
 
 this.blackhole=new BlackholeEffect({
 scene:this.scene,
@@ -100,7 +130,7 @@ this.blackhole.setPosition(0,0,-6)
 
 }
 
-_initHearts(){
+_createHearts(){
 
 this.hearts=new HeartParticlesSystem({
 scene:this.scene,
@@ -110,7 +140,7 @@ count:600
 
 }
 
-_registerSubsystem(system){
+_register(system){
 
 if(!system)return
 
@@ -118,7 +148,7 @@ this.subsystems.add(system)
 
 }
 
-_unregisterSubsystem(system){
+_unregister(system){
 
 if(!system)return
 
@@ -128,11 +158,7 @@ this.subsystems.delete(system)
 
 _getCamera(){
 
-if(this.engine?.getCamera){
-return this.engine.getCamera()
-}
-
-return null
+return this.engine?.getCamera?.()||null
 
 }
 
@@ -144,11 +170,14 @@ if(!this.initialized){
 
 this.init()
 
+return
+
 }
 
 if(delta===undefined){
 
 delta=this.clock.getDelta()
+
 elapsed=this.clock.elapsedTime
 
 }else if(elapsed===undefined){
@@ -159,9 +188,16 @@ elapsed=this.clock.elapsedTime
 
 for(const system of this.subsystems){
 
-if(system?.update){
+try{
 
-system.update(delta,elapsed)
+system?.update?.(delta,elapsed)
+
+}catch(e){
+
+this._emitDebug(
+'Subsystem update failure',
+e
+)
 
 }
 
@@ -175,9 +211,16 @@ if(this.disposed)return
 
 for(const system of this.subsystems){
 
-if(system?.resize){
+try{
 
-system.resize(width,height)
+system?.resize?.(width,height)
+
+}catch(e){
+
+this._emitDebug(
+'Subsystem resize failure',
+e
+)
 
 }
 
@@ -187,53 +230,67 @@ system.resize(width,height)
 
 add(object){
 
+if(!object)return
+
 this.scene.add(object)
+
+this.objects.add(object)
 
 }
 
 remove(object){
 
+if(!object)return
+
 this.scene.remove(object)
+
+this.objects.delete(object)
+
+this._disposeObject(object)
 
 }
 
 clear(){
 
-const toRemove=[]
+for(const object of this.objects){
 
-this.scene.traverse(child=>{
-if(child.isMesh||child.isPoints||child.isLine){
-toRemove.push(child)
+this.scene.remove(object)
+
+this._disposeObject(object)
+
 }
-})
 
-for(const obj of toRemove){
+this.objects.clear()
 
-this.scene.remove(obj)
+}
 
-if(obj.geometry)obj.geometry.dispose()
+_disposeObject(object){
 
-if(obj.material){
+if(!object)return
 
-if(Array.isArray(obj.material)){
+if(object.geometry){
 
-for(const mat of obj.material){
+object.geometry.dispose()
+
+}
+
+if(object.material){
+
+if(Array.isArray(object.material)){
+
+for(const mat of object.material){
+
 mat.dispose()
+
 }
 
 }else{
-obj.material.dispose()
-}
+
+object.material.dispose()
 
 }
 
 }
-
-}
-
-getScene(){
-
-return this.scene
 
 }
 
@@ -241,13 +298,22 @@ dispose(){
 
 if(this.disposed)return
 
-this.state='disposing'
+this.state=SCENE_STATE.DISPOSING
+
+this._emitDebug('Scene disposing')
 
 for(const system of this.subsystems){
 
-if(system?.dispose){
+try{
 
-system.dispose()
+system?.dispose?.()
+
+}catch(e){
+
+this._emitDebug(
+'Subsystem dispose failure',
+e
+)
 
 }
 
@@ -256,6 +322,8 @@ system.dispose()
 this.subsystems.clear()
 
 this.clear()
+
+this.scene.clear()
 
 this.scene=null
 
@@ -266,7 +334,29 @@ this.lighting=null
 
 this.initialized=false
 this.disposed=true
-this.state='disposed'
+
+this.state=SCENE_STATE.DISPOSED
+
+this._emitDebug('Scene disposed')
+
+}
+
+getScene(){
+
+return this.scene
+
+}
+
+_emitDebug(...args){
+
+if(this.debug){
+
+console.warn(
+'[KUROMI SCENE]',
+...args
+)
+
+}
 
 }
 
