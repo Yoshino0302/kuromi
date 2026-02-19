@@ -5,6 +5,15 @@ import { CameraController } from './CameraController.js'
 import { CinematicSequencer } from './sequencer/CinematicSequencer.js'
 import { CameraKeyframeTrack } from './sequencer/CameraKeyframeTrack.js'
 
+const CAMERA_STATE={
+CONSTRUCTED:0,
+INITIALIZING:1,
+INITIALIZED:2,
+ACTIVE:3,
+DISPOSING:4,
+DISPOSED:5
+}
+
 export class CameraSystem{
 
 constructor(options={}){
@@ -13,38 +22,62 @@ this.options=options
 this.engine=options.engine||null
 this.debug=options.debug===true
 
-this.state='constructed'
+this.state=CAMERA_STATE.CONSTRUCTED
+
 this.initialized=false
 this.disposed=false
 
-this.clock=new THREE.Clock()
+this.clock=new THREE.Clock(false)
 
-this.cinematicCamera=new CinematicCamera(options)
+this.cameras=new Set()
 
-this.shake=new CameraShake(options)
+this.activeCamera=null
 
-this.controller=new CameraController(
-this.cinematicCamera.position,
-options
-)
+this.cinematicCamera=null
 
-this.sequencer=new CinematicSequencer(
-this.cinematicCamera,
-options
-)
+this.controller=null
+this.shake=null
+this.sequencer=null
 
-this.activeCamera=this.cinematicCamera
+this._initPromise=null
 
-this._resizeHandler=null
-
-this._initDefaultSequence()
-
-this.initialized=true
-this.state='initialized'
+this._initialize()
 
 }
 
-_initDefaultSequence(){
+_initialize(){
+
+this.state=CAMERA_STATE.INITIALIZING
+
+this.cinematicCamera=new CinematicCamera(this.options)
+
+this.controller=new CameraController(
+this.cinematicCamera.position,
+this.options
+)
+
+this.shake=new CameraShake(this.options)
+
+this.sequencer=new CinematicSequencer(
+this.cinematicCamera,
+this.options
+)
+
+this._registerCamera(this.cinematicCamera)
+
+this.activeCamera=this.cinematicCamera
+
+this._installDefaultSequence()
+
+this.clock.start()
+
+this.initialized=true
+
+this.state=CAMERA_STATE.INITIALIZED
+
+}
+
+_installDefaultSequence(){
 
 if(this.options.disableDefaultSequence)return
 
@@ -77,8 +110,26 @@ new THREE.Vector3(-3,0,0)
 this.sequencer.setTrack(track)
 
 if(this.options.autoplay!==false){
+
 this.sequencer.play()
+
 }
+
+}
+
+_registerCamera(camera){
+
+if(!camera)return
+
+this.cameras.add(camera)
+
+}
+
+_unregisterCamera(camera){
+
+if(!camera)return
+
+this.cameras.delete(camera)
 
 }
 
@@ -86,8 +137,12 @@ update(delta){
 
 if(this.disposed)return
 
+if(!this.initialized)return
+
 if(delta===undefined){
+
 delta=this.clock.getDelta()
+
 }
 
 this._updateController(delta)
@@ -96,44 +151,70 @@ this._updateSequencer(delta)
 
 this._updateShake(delta)
 
-this._updateCamera(delta)
+this._updateActiveCamera(delta)
 
 }
 
 _updateController(delta){
 
-if(this.controller?.update){
-this.controller.update(delta)
+try{
+
+this.controller?.update?.(delta)
+
+}catch(e){
+
+this._debug('Controller update failed',e)
+
 }
 
 }
 
 _updateSequencer(delta){
 
-if(this.sequencer?.update){
-this.sequencer.update(delta)
+try{
+
+this.sequencer?.update?.(delta)
+
+}catch(e){
+
+this._debug('Sequencer update failed',e)
+
 }
 
 }
 
 _updateShake(delta){
 
-if(!this.shake)return
+try{
 
-this.shake.update(delta)
+this.shake?.update?.(delta)
 
-const offset=this.shake.getOffset?.()
+const offset=this.shake?.getOffset?.()
 
 if(offset){
-this.cinematicCamera.addShake(offset)
+
+this.cinematicCamera?.addShake?.(offset)
+
+}
+
+}catch(e){
+
+this._debug('Shake update failed',e)
+
 }
 
 }
 
-_updateCamera(delta){
+_updateActiveCamera(delta){
 
-if(this.cinematicCamera?.update){
-this.cinematicCamera.update(delta)
+try{
+
+this.activeCamera?.update?.(delta)
+
+}catch(e){
+
+this._debug('Camera update failed',e)
+
 }
 
 }
@@ -142,13 +223,13 @@ resize(width,height){
 
 if(this.disposed)return
 
-const camera=this.getCamera()
+const cam=this.getCamera()
 
-if(!camera)return
+if(!cam)return
 
-camera.aspect=width/height
+cam.aspect=width/height
 
-camera.updateProjectionMatrix()
+cam.updateProjectionMatrix()
 
 }
 
@@ -170,25 +251,55 @@ setActiveCamera(camera){
 
 if(this.disposed)return
 
+if(!camera)return
+
+this._registerCamera(camera)
+
 this.activeCamera=camera
+
+this.state=CAMERA_STATE.ACTIVE
+
+}
+
+addCamera(camera){
+
+this._registerCamera(camera)
+
+}
+
+removeCamera(camera){
+
+if(camera===this.activeCamera){
+
+this._debug('Cannot remove active camera')
+
+return
+
+}
+
+this._unregisterCamera(camera)
 
 }
 
 getPosition(){
 
-return this.cinematicCamera.position
+return this.cinematicCamera?.position||null
 
 }
 
 setPosition(vec3){
 
-this.cinematicCamera.position.copy(vec3)
+if(!vec3)return
+
+this.cinematicCamera?.position?.copy(vec3)
 
 }
 
 lookAt(vec3){
 
-this.cinematicCamera.lookAt(vec3)
+if(!vec3)return
+
+this.cinematicCamera?.lookAt?.(vec3)
 
 }
 
@@ -196,7 +307,7 @@ shakeCamera(intensity=1){
 
 if(this.disposed)return
 
-this.shake?.trigger(intensity)
+this.shake?.trigger?.(intensity)
 
 }
 
@@ -204,33 +315,27 @@ playSequence(track){
 
 if(this.disposed)return
 
-this.sequencer.setTrack(track)
+this.sequencer?.setTrack?.(track)
 
-this.sequencer.play()
+this.sequencer?.play?.()
 
 }
 
 stopSequence(){
 
-if(this.disposed)return
-
-this.sequencer.stop()
+this.sequencer?.stop?.()
 
 }
 
 pauseSequence(){
 
-if(this.disposed)return
-
-this.sequencer.pause()
+this.sequencer?.pause?.()
 
 }
 
 resumeSequence(){
 
-if(this.disposed)return
-
-this.sequencer.play()
+this.sequencer?.play?.()
 
 }
 
@@ -238,23 +343,29 @@ dispose(){
 
 if(this.disposed)return
 
-this.state='disposing'
+this.state=CAMERA_STATE.DISPOSING
 
-if(this.sequencer?.dispose){
-this.sequencer.dispose()
+for(const cam of this.cameras){
+
+try{
+
+cam?.dispose?.()
+
+}catch(e){
+
+this._debug('Camera dispose failed',e)
+
 }
 
-if(this.controller?.dispose){
-this.controller.dispose()
 }
 
-if(this.shake?.dispose){
-this.shake.dispose()
-}
+this.cameras.clear()
 
-if(this.cinematicCamera?.dispose){
-this.cinematicCamera.dispose()
-}
+this.sequencer?.dispose?.()
+
+this.controller?.dispose?.()
+
+this.shake?.dispose?.()
 
 this.activeCamera=null
 this.sequencer=null
@@ -264,7 +375,21 @@ this.cinematicCamera=null
 
 this.disposed=true
 this.initialized=false
-this.state='disposed'
+
+this.state=CAMERA_STATE.DISPOSED
+
+}
+
+_debug(...args){
+
+if(this.debug){
+
+console.warn(
+'[KUROMI CAMERA]',
+...args
+)
+
+}
 
 }
 
