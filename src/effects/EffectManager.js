@@ -1,1 +1,0 @@
-export class EffectManager{constructor(engine){this.engine=engine}update(dt){}}
