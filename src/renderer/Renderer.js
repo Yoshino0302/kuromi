@@ -1,5 +1,5 @@
 import * as THREE from 'https://jspm.dev/three'
-import { ValentineColors } from '../src/config/ValentineColors.js'
+import { ValentineColors } from '../config/ValentineColors.js'
 export class Renderer{
 constructor(){
 this.canvas=document.getElementById('engine-canvas')
