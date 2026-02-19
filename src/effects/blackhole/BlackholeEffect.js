@@ -1,12 +1,11 @@
 import * as THREE from 'https://jspm.dev/three'
+import { ValentineColors } from '../../config/ValentineColors.js'
 
 export class BlackholeEffect{
 
 constructor(scene){
 
 this.scene=scene
-
-this.time=0
 
 this.createBlackhole()
 
@@ -15,58 +14,26 @@ this.createBlackhole()
 createBlackhole(){
 
 const geometry=new THREE.SphereGeometry(
-1,
-128,
-128
+1.5,
+64,
+64
 )
 
-const material=new THREE.ShaderMaterial({
+const material=new THREE.MeshStandardMaterial({
 
-uniforms:{
-time:{value:0}
-},
+color:new THREE.Color(
+ValentineColors.blackholeEdge
+),
 
-vertexShader:`
+emissive:new THREE.Color(
+ValentineColors.deep
+),
 
-varying vec3 vPos;
+emissiveIntensity:2.5,
 
-void main(){
+metalness:1.0,
 
-vPos=position;
-
-gl_Position=
-projectionMatrix*
-modelViewMatrix*
-vec4(position,1.0);
-
-}
-`,
-
-fragmentShader:`
-
-uniform float time;
-
-varying vec3 vPos;
-
-void main(){
-
-float dist=
-length(vPos.xy);
-
-float glow=
-1.0-dist;
-
-glow+=
-sin(dist*10.0-time*3.0)*0.1;
-
-vec3 color=
-vec3(glow*0.5,glow*0.2,glow);
-
-gl_FragColor=
-vec4(color,1.0);
-
-}
-`
+roughness:0.2
 
 })
 
@@ -82,11 +49,6 @@ this.scene.add(this.mesh)
 }
 
 update(delta){
-
-this.time+=delta
-
-this.mesh.material.uniforms.time.value=
-this.time
 
 this.mesh.rotation.y+=delta*0.3
 
