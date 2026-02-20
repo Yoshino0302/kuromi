@@ -1,232 +1,221 @@
 const KEY_STATE={
 UP:0,
-DOWN:1
+DOWN:1,
+HELD:2,
+RELEASED:3
 }
 
 export class Keyboard{
 
-constructor(target=window){
+constructor(target=document){
 
 this.target=target
 
 this.enabled=true
 
-this.keys=new Map()
-this.prevKeys=new Map()
+this.keys=new Uint8Array(256)
+this.previous=new Uint8Array(256)
 
-this.downCallbacks=new Map()
-this.upCallbacks=new Map()
-this.pressCallbacks=new Map()
+this.timestamps=new Float64Array(256)
 
-this.anyDownCallbacks=[]
-this.anyUpCallbacks=[]
+this.repeatDelay=0.35
+this.repeatInterval=0.035
 
-this._eventQueue=[]
+this._repeatTimers=new Float64Array(256)
 
-this._onKeyDown=this._handleKeyDown.bind(this)
-this._onKeyUp=this._handleKeyUp.bind(this)
-this._onBlur=this._handleBlur.bind(this)
+this._listeners=new Map()
 
-this._listening=false
+this._boundDown=this._onKeyDown.bind(this)
+this._boundUp=this._onKeyUp.bind(this)
+this._boundBlur=this._onBlur.bind(this)
 
-this.listen()
+this._install()
 
 }
 
-listen(){
+_install(){
 
-if(this._listening)return
+this.target.addEventListener('keydown',this._boundDown,false)
+this.target.addEventListener('keyup',this._boundUp,false)
 
-this.target.addEventListener('keydown',this._onKeyDown,false)
-this.target.addEventListener('keyup',this._onKeyUp,false)
-window.addEventListener('blur',this._onBlur,false)
-
-this._listening=true
-
-}
-
-stop(){
-
-if(!this._listening)return
-
-this.target.removeEventListener('keydown',this._onKeyDown,false)
-this.target.removeEventListener('keyup',this._onKeyUp,false)
-window.removeEventListener('blur',this._onBlur,false)
-
-this._listening=false
-
-}
-
-_handleKeyDown(e){
-
-if(!this.enabled)return
-
-const code=e.code
-
-if(this.keys.get(code)===KEY_STATE.DOWN)return
-
-this.keys.set(code,KEY_STATE.DOWN)
-
-this._eventQueue.push({
-type:'down',
-code,
-event:e
-})
-
-}
-
-_handleKeyUp(e){
-
-if(!this.enabled)return
-
-const code=e.code
-
-this.keys.set(code,KEY_STATE.UP)
-
-this._eventQueue.push({
-type:'up',
-code,
-event:e
-})
-
-}
-
-_handleBlur(){
-
-this.keys.clear()
-
-}
-
-update(){
-
-if(!this.enabled)return
-
-for(const [code,state] of this.keys){
-
-this.prevKeys.set(code,state)
-
-}
-
-const queue=this._eventQueue
-
-for(let i=0;i<queue.length;i++){
-
-const evt=queue[i]
-const code=evt.code
-
-if(evt.type==='down'){
-
-const list=this.downCallbacks.get(code)
-if(list){
-for(let j=0;j<list.length;j++)list[j](evt.event)
-}
-
-for(let j=0;j<this.anyDownCallbacks.length;j++){
-this.anyDownCallbacks[j](code,evt.event)
-}
-
-}else{
-
-const list=this.upCallbacks.get(code)
-if(list){
-for(let j=0;j<list.length;j++)list[j](evt.event)
-}
-
-for(let j=0;j<this.anyUpCallbacks.length;j++){
-this.anyUpCallbacks[j](code,evt.event)
-}
-
-}
-
-}
-
-this._eventQueue.length=0
-
-}
-
-isDown(code){
-
-return this.keys.get(code)===KEY_STATE.DOWN
-
-}
-
-isUp(code){
-
-return !this.keys.has(code)||this.keys.get(code)===KEY_STATE.UP
-
-}
-
-isPressed(code){
-
-return this.isDown(code)&&this.prevKeys.get(code)!==KEY_STATE.DOWN
-
-}
-
-isReleased(code){
-
-return this.isUp(code)&&this.prevKeys.get(code)===KEY_STATE.DOWN
-
-}
-
-onKeyDown(code,fn){
-
-let list=this.downCallbacks.get(code)
-
-if(!list){
-list=[]
-this.downCallbacks.set(code,list)
-}
-
-list.push(fn)
-
-}
-
-onKeyUp(code,fn){
-
-let list=this.upCallbacks.get(code)
-
-if(!list){
-list=[]
-this.upCallbacks.set(code,list)
-}
-
-list.push(fn)
-
-}
-
-onAnyKeyDown(fn){
-
-this.anyDownCallbacks.push(fn)
-
-}
-
-onAnyKeyUp(fn){
-
-this.anyUpCallbacks.push(fn)
-
-}
-
-clear(){
-
-this.keys.clear()
-this.prevKeys.clear()
-this._eventQueue.length=0
+window.addEventListener('blur',this._boundBlur,false)
 
 }
 
 dispose(){
 
-this.stop()
+this.target.removeEventListener('keydown',this._boundDown)
+this.target.removeEventListener('keyup',this._boundUp)
 
-this.clear()
+window.removeEventListener('blur',this._boundBlur)
 
-this.downCallbacks.clear()
-this.upCallbacks.clear()
+this._listeners.clear()
 
-this.anyDownCallbacks.length=0
-this.anyUpCallbacks.length=0
+}
 
-this.target=null
+update(time){
+
+for(let i=0;i<256;i++){
+
+const state=this.keys[i]
+
+if(state===KEY_STATE.DOWN){
+
+this.keys[i]=KEY_STATE.HELD
+
+this._repeatTimers[i]=time+this.repeatDelay
+
+}else if(state===KEY_STATE.RELEASED){
+
+this.keys[i]=KEY_STATE.UP
+
+}
+
+if(this.keys[i]===KEY_STATE.HELD){
+
+if(time>=this._repeatTimers[i]){
+
+this._emit(i,'repeat')
+
+this._repeatTimers[i]=time+this.repeatInterval
+
+}
+
+}
+
+}
+
+}
+
+_onKeyDown(e){
+
+if(!this.enabled)return
+
+const code=e.keyCode&255
+
+if(this.keys[code]===KEY_STATE.UP){
+
+this.keys[code]=KEY_STATE.DOWN
+
+this.timestamps[code]=performance.now()
+
+this._emit(code,'down')
+
+}
+
+}
+
+_onKeyUp(e){
+
+if(!this.enabled)return
+
+const code=e.keyCode&255
+
+this.keys[code]=KEY_STATE.RELEASED
+
+this.timestamps[code]=performance.now()
+
+this._emit(code,'up')
+
+}
+
+_onBlur(){
+
+for(let i=0;i<256;i++){
+
+this.keys[i]=KEY_STATE.UP
+
+}
+
+}
+
+isDown(code){
+
+return this.keys[code]===KEY_STATE.DOWN
+
+}
+
+isHeld(code){
+
+return this.keys[code]===KEY_STATE.HELD
+
+}
+
+isUp(code){
+
+return this.keys[code]===KEY_STATE.UP
+
+}
+
+isReleased(code){
+
+return this.keys[code]===KEY_STATE.RELEASED
+
+}
+
+getDuration(code){
+
+if(this.keys[code]===KEY_STATE.UP)return 0
+
+return performance.now()-this.timestamps[code]
+
+}
+
+on(code,type,callback){
+
+const key=`${code}:${type}`
+
+if(!this._listeners.has(key)){
+
+this._listeners.set(key,new Set())
+
+}
+
+this._listeners.get(key).add(callback)
+
+return()=>{
+
+this._listeners.get(key)?.delete(callback)
+
+}
+
+}
+
+_emit(code,type){
+
+const key=`${code}:${type}`
+
+const set=this._listeners.get(key)
+
+if(!set)return
+
+for(const cb of set){
+
+cb(code,type)
+
+}
+
+}
+
+enable(){
+
+this.enabled=true
+
+}
+
+disable(){
+
+this.enabled=false
+
+}
+
+reset(){
+
+for(let i=0;i<256;i++){
+
+this.keys[i]=KEY_STATE.UP
+
+}
 
 }
 
