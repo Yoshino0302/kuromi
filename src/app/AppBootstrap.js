@@ -1,8 +1,6 @@
 import {Engine} from '../core/Engine.js'
 import {EngineState} from '../core/EngineState.js'
-import {createEngineConfig} from '../config/EngineConfig.js'
 import {App} from './App.js'
-import {AppState} from './AppState.js'
 import {EventEmitter} from '../utils/EventEmitter.js'
 
 export class AppBootstrap extends EventEmitter{
@@ -14,132 +12,93 @@ super()
 this.options=options
 
 this.engine=null
-this.engineState=null
-
+this.state=null
 this.app=null
-this.appState=null
-
-this.config=null
-
-this.initialized=false
-this.started=false
-this.destroyed=false
 
 this.container=null
 this.canvas=null
 
+this.booted=false
+this.started=false
+this.destroyed=false
+
+this._bootPromise=null
+this._startPromise=null
+this._shutdownPromise=null
+
+this._boundVisibility=this._handleVisibility.bind(this)
+this._boundBeforeUnload=this._handleBeforeUnload.bind(this)
+
 }
 
-async initialize(options={}){
+async boot(){
 
-if(this.initialized||this.destroyed)return
+if(this.booted)return this
+if(this._bootPromise)return this._bootPromise
 
-this.config=createEngineConfig(options.engine||{})
+this._bootPromise=this._bootInternal()
 
-this.resolveContainer(options.container)
+return this._bootPromise
 
-this.resolveCanvas(options.canvas)
+}
 
-this.engineState=new EngineState()
+async _bootInternal(){
 
-this.appState=new AppState()
+this.emit('boot:start')
 
-this.engine=new Engine(this.config,this.engineState)
+this._resolveDOM()
 
-this.app=new App(this.engine,this.appState,options.app||{})
+this.state=new EngineState()
 
-await this.engine.initialize({
+this.engine=new Engine({
+canvas:this.canvas,
 container:this.container,
-canvas:this.canvas
+debug:this.options.debug===true,
+config:this.options.config||{}
 })
+
+await this.engine.init()
+
+this.app=new App(
+this.engine,
+this.state,
+this.options.app||{}
+)
 
 await this.app.initialize()
 
-this.bindEvents()
+this._bindState()
 
-this.initialized=true
+this._installDOMHooks()
 
-this.emit('initialized',this)
+this.booted=true
+
+this.emit('boot:complete',this)
 
 return this
 
 }
 
-resolveContainer(container){
-
-if(typeof container==='string'){
-
-this.container=document.querySelector(container)
-
-}else if(container instanceof HTMLElement){
-
-this.container=container
-
-}else{
-
-this.container=document.body
-
-}
-
-}
-
-resolveCanvas(canvas){
-
-if(typeof canvas==='string'){
-
-this.canvas=document.querySelector(canvas)
-
-}else if(canvas instanceof HTMLCanvasElement){
-
-this.canvas=canvas
-
-}else{
-
-this.canvas=document.createElement('canvas')
-
-this.container.appendChild(this.canvas)
-
-}
-
-}
-
-bindEvents(){
-
-this.engine.on('start',()=>{
-
-this.emit('engine:start')
-
-})
-
-this.engine.on('stop',()=>{
-
-this.emit('engine:stop')
-
-})
-
-this.app.on('started',()=>{
-
-this.emit('app:started')
-
-})
-
-this.app.on('stopped',()=>{
-
-this.emit('app:stopped')
-
-})
-
-}
-
 async start(){
 
-if(this.started||this.destroyed)return
+if(this.started)return this
+if(this._startPromise)return this._startPromise
 
-if(!this.initialized){
+this._startPromise=this._startInternal()
 
-await this.initialize(this.options)
+return this._startPromise
 
 }
+
+async _startInternal(){
+
+if(!this.booted){
+
+await this.boot()
+
+}
+
+this.emit('start')
 
 await this.engine.start()
 
@@ -147,87 +106,187 @@ await this.app.start()
 
 this.started=true
 
-this.emit('started',this)
+return this
 
 }
 
 pause(){
 
-if(this.destroyed)return
+if(!this.engine)return
 
 this.engine.pause()
-
-this.app.pause()
-
-this.emit('paused',this)
 
 }
 
 resume(){
 
-if(this.destroyed)return
+if(!this.engine)return
 
 this.engine.resume()
-
-this.app.resume()
-
-this.emit('resumed',this)
 
 }
 
 stop(){
 
-if(!this.started||this.destroyed)return
-
-this.app.stop()
+if(!this.engine)return
 
 this.engine.stop()
 
-this.started=false
+}
 
-this.emit('stopped',this)
+async shutdown(){
+
+if(this.destroyed)return
+if(this._shutdownPromise)return this._shutdownPromise
+
+this._shutdownPromise=this._shutdownInternal()
+
+return this._shutdownPromise
 
 }
 
-destroy(){
+async _shutdownInternal(){
 
-if(this.destroyed)return
+this.emit('shutdown:start')
 
-this.stop()
+this._removeDOMHooks()
 
-this.app?.destroy()
+await this.app?.destroy?.()
 
-this.engine?.destroy()
-
-this.removeCanvas()
+await this.engine?.shutdown?.()
 
 this.engine=null
 this.app=null
-this.engineState=null
-this.appState=null
+this.state=null
 
-this.initialized=false
+this.booted=false
 this.started=false
 this.destroyed=true
 
-this.emit('destroyed',this)
-
-this.removeAllListeners()
+this.emit('shutdown:complete')
 
 }
 
-removeCanvas(){
+_bindState(){
 
-if(
-this.canvas&&
-this.canvas.parentNode
-){
+const engine=this.engine
+const state=this.state
 
-this.canvas.parentNode.removeChild(this.canvas)
+engine.on('init:start',()=>{
+state.setPhase?.(1)
+})
+
+engine.on('init:complete',()=>{
+state.markInitialized?.()
+})
+
+engine.on('start',()=>{
+state.markRunning?.()
+})
+
+engine.on('pause',()=>{
+state.markPaused?.()
+})
+
+engine.on('resume',()=>{
+state.markResumed?.()
+})
+
+engine.on('stop',()=>{
+state.markStopped?.()
+})
+
+engine.on('shutdown:complete',()=>{
+state.markDestroyed?.()
+})
+
+engine.on('frame:start',(delta)=>{
+
+state.delta=delta
+state.time=engine.getTime?.()||0
+state.frame=engine.getFrame?.()||0
+
+})
 
 }
 
-this.canvas=null
+_resolveDOM(){
+
+this.container=
+this.options.container||
+document.body
+
+this.canvas=
+this.options.canvas||
+this._createCanvas()
+
+if(!this.canvas.parentNode){
+
+this.container.appendChild(this.canvas)
+
+}
+
+}
+
+_createCanvas(){
+
+const canvas=document.createElement('canvas')
+
+canvas.style.width='100%'
+canvas.style.height='100%'
+canvas.style.display='block'
+
+return canvas
+
+}
+
+_installDOMHooks(){
+
+document.addEventListener(
+'visibilitychange',
+this._boundVisibility,
+{passive:true}
+)
+
+window.addEventListener(
+'beforeunload',
+this._boundBeforeUnload,
+{passive:true}
+)
+
+}
+
+_removeDOMHooks(){
+
+document.removeEventListener(
+'visibilitychange',
+this._boundVisibility
+)
+
+window.removeEventListener(
+'beforeunload',
+this._boundBeforeUnload
+)
+
+}
+
+_handleVisibility(){
+
+if(document.hidden){
+
+this.pause()
+
+}else{
+
+this.resume()
+
+}
+
+}
+
+_handleBeforeUnload(){
+
+this.shutdown()
 
 }
 
@@ -237,33 +296,21 @@ return this.engine
 
 }
 
+getState(){
+
+return this.state
+
+}
+
 getApp(){
 
 return this.app
 
 }
 
-getConfig(){
+isRunning(){
 
-return this.config
-
-}
-
-isInitialized(){
-
-return this.initialized
-
-}
-
-isStarted(){
-
-return this.started
-
-}
-
-isDestroyed(){
-
-return this.destroyed
+return this.engine?.isRunning?.()||false
 
 }
 
