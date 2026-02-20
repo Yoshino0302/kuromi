@@ -1,45 +1,93 @@
 import * as THREE from 'https://jspm.dev/three'
 import { ValentineColors } from '../config/ValentineColors.js'
 
+const LIGHTING_STATE={
+CONSTRUCTED:0,
+INITIALIZING:1,
+INITIALIZED:2,
+ACTIVE:3,
+DISPOSING:4,
+DISPOSED:5
+}
+
 export class LightingSystem{
 
 constructor(scene,camera,colors={},options={}){
 
-this.scene=scene
-this.camera=camera
+this.scene=scene||null
+this.camera=camera||null
 
 this.colors=colors||ValentineColors
-this.options=options
+this.options=options||{}
 
-this.state='constructed'
+this.state=LIGHTING_STATE.CONSTRUCTED
 this.disposed=false
+this.initialized=false
 
 this.time=0
 
 this.lights=[]
 this.dynamicLights=[]
+this.shadowLights=[]
 
 this.ambientLight=null
 this.keyLight=null
 this.rimLight=null
 this.fillLight=null
 
-this.tmpVec=new THREE.Vector3()
-this.tmpVec2=new THREE.Vector3()
-
-this.baseIntensities=new Map()
+this.enableCameraTracking=options.enableCameraTracking??true
+this.enableLightAnimation=options.enableLightAnimation??true
+this.enableShadows=options.enableShadows??true
+this.enableCinematicSync=options.enableCinematicSync??true
 
 this.shadowMapSize=options.shadowMapSize??1024
 
-this.enableCameraTracking=options.enableCameraTracking??true
+this.globalIntensity=1
+this.globalColorMultiplier=new THREE.Color(1,1,1)
 
-this._create()
+this.baseIntensities=new Map()
+this.baseColors=new Map()
 
-this.state='initialized'
+this.tmpVec=new THREE.Vector3()
+this.tmpVec2=new THREE.Vector3()
+this.tmpVec3=new THREE.Vector3()
+
+this._cameraObject=null
+this._cameraPosition=new THREE.Vector3()
+
+this._pulsePhase=0
+
+this._initialize()
 
 }
 
-_create(){
+_initialize(){
+
+if(this.disposed)return
+
+this.state=LIGHTING_STATE.INITIALIZING
+
+this._resolveCamera()
+
+this._createLights()
+
+this.initialized=true
+this.state=LIGHTING_STATE.INITIALIZED
+
+}
+
+_resolveCamera(){
+
+if(!this.camera)return
+
+this._cameraObject=
+this.camera.getCamera?.()||
+this.camera.camera||
+this.camera
+
+}
+
+_createLights(){
 
 this._createAmbient()
 this._createKeyLight()
@@ -50,82 +98,75 @@ this._createFillLight()
 
 _createAmbient(){
 
+const color=this.colors.primary||0xffffff
+
 this.ambientLight=new THREE.AmbientLight(
-this.colors.primary,
+color,
 0.35
 )
 
-this.scene.add(this.ambientLight)
-
-this.lights.push(this.ambientLight)
+this._registerLight(this.ambientLight,0.35,color,false)
 
 }
 
 _createKeyLight(){
 
+const color=this.colors.glow||0xffffff
+
 this.keyLight=new THREE.PointLight(
-this.colors.glow,
+color,
 28,
 120,
 2
 )
 
-this.keyLight.position.set(0,2,6)
+this.keyLight.position.set(0,3,6)
 
 this._configureShadow(this.keyLight)
 
-this.scene.add(this.keyLight)
-
-this.lights.push(this.keyLight)
-this.dynamicLights.push(this.keyLight)
-
-this.baseIntensities.set(this.keyLight,28)
+this._registerLight(this.keyLight,28,color,true)
 
 }
 
 _createRimLight(){
 
+const color=this.colors.secondary||0xffffff
+
 this.rimLight=new THREE.PointLight(
-this.colors.secondary,
+color,
 18,
 100,
 2
 )
 
-this.rimLight.position.set(-4,3,-6)
+this.rimLight.position.set(-6,4,-8)
 
 this._configureShadow(this.rimLight)
 
-this.scene.add(this.rimLight)
-
-this.lights.push(this.rimLight)
-this.dynamicLights.push(this.rimLight)
-
-this.baseIntensities.set(this.rimLight,18)
+this._registerLight(this.rimLight,18,color,true)
 
 }
 
 _createFillLight(){
 
+const color=this.colors.accentSoft||0xffffff
+
 this.fillLight=new THREE.PointLight(
-this.colors.accentSoft,
+color,
 10,
 80,
 2
 )
 
-this.fillLight.position.set(4,1,-2)
+this.fillLight.position.set(6,2,-3)
 
-this.scene.add(this.fillLight)
-
-this.lights.push(this.fillLight)
-this.dynamicLights.push(this.fillLight)
-
-this.baseIntensities.set(this.fillLight,10)
+this._registerLight(this.fillLight,10,color,true)
 
 }
 
 _configureShadow(light){
+
+if(!this.enableShadows)return
 
 light.castShadow=true
 
@@ -137,63 +178,151 @@ light.shadow.normalBias=0.02
 
 light.shadow.radius=2
 
+this.shadowLights.push(light)
+
 }
 
-update(delta,elapsed){
+_registerLight(light,intensity,color,dynamic){
 
+if(!light)return
 if(this.disposed)return
 
+this.scene.add(light)
+
+this.lights.push(light)
+
+this.baseIntensities.set(light,intensity)
+
+this.baseColors.set(
+light,
+new THREE.Color(color)
+)
+
+if(dynamic){
+
+this.dynamicLights.push(light)
+
+}
+
+}
+
+update(delta){
+
+if(this.disposed)return
+if(!this.initialized)return
 if(delta<=0)return
 
 this.time+=delta
 
-this._updateDynamicLights()
+if(this.enableLightAnimation){
+
+this._updateLightAnimation(delta)
+
+}
 
 if(this.enableCameraTracking){
 
-this._updateCameraTracking()
+this._updateCameraTracking(delta)
+
+}
+
+if(this.enableCinematicSync){
+
+this._updateCinematicSync(delta)
 
 }
 
 }
 
-_updateDynamicLights(){
+_updateLightAnimation(delta){
 
 const t=this.time
 
-let i=0
+this._pulsePhase+=delta*0.5
+
+let index=0
 
 for(const light of this.dynamicLights){
 
-const base=this.baseIntensities.get(light)||10
+const base=this.baseIntensities.get(light)||1
 
 const pulse=
-Math.sin(t*1.7+i)*2+
-Math.sin(t*0.9+i*0.5)*1.5
+Math.sin(t*1.7+index)*2+
+Math.sin(t*0.9+index*0.5)*1.5+
+Math.sin(this._pulsePhase)*1.0
 
-light.intensity=base+pulse
+light.intensity=
+(base+pulse)*this.globalIntensity
 
-i++
+index++
 
 }
 
 }
 
-_updateCameraTracking(){
+_updateCameraTracking(delta){
 
-if(!this.camera)return
+if(!this._cameraObject)return
 
-const cam=this.camera.getCamera?.()||this.camera
+this._cameraPosition.copy(
+this._cameraObject.position
+)
 
-if(!cam)return
-
-this.tmpVec.copy(cam.position)
-
+this.tmpVec.copy(this._cameraPosition)
 this.tmpVec.multiplyScalar(0.35)
+this.tmpVec.y+=2.5
 
-this.tmpVec.y+=2.0
+if(this.keyLight){
 
-this.keyLight.position.lerp(this.tmpVec,0.05)
+this.keyLight.position.lerp(
+this.tmpVec,
+0.08
+)
+
+}
+
+}
+
+_updateCinematicSync(delta){
+
+if(!this._cameraObject)return
+
+const height=this._cameraObject.position.y
+
+const heightFactor=
+THREE.MathUtils.clamp(
+height*0.15,
+0.8,
+1.4
+)
+
+for(const light of this.dynamicLights){
+
+light.intensity*=heightFactor
+
+}
+
+}
+
+setGlobalIntensity(value){
+
+this.globalIntensity=value
+
+}
+
+setGlobalColor(color){
+
+this.globalColorMultiplier.set(color)
+
+for(const light of this.lights){
+
+const base=this.baseColors.get(light)
+if(!base)continue
+
+light.color.copy(base)
+light.color.multiply(this.globalColorMultiplier)
+
+}
 
 }
 
@@ -201,23 +330,19 @@ addLight(light,baseIntensity=10){
 
 if(this.disposed)return
 
-this.scene.add(light)
-
-this.lights.push(light)
-
-if(light.isPointLight||light.isSpotLight||light.isDirectionalLight){
-
-this.dynamicLights.push(light)
-
-this.baseIntensities.set(light,baseIntensity)
-
-}
+this._registerLight(
+light,
+baseIntensity,
+light.color?.getHex?.()||0xffffff,
+true
+)
 
 }
 
 removeLight(light){
 
 if(this.disposed)return
+if(!light)return
 
 this.scene.remove(light)
 
@@ -227,29 +352,11 @@ if(i!==-1)this.lights.splice(i,1)
 let j=this.dynamicLights.indexOf(light)
 if(j!==-1)this.dynamicLights.splice(j,1)
 
+let k=this.shadowLights.indexOf(light)
+if(k!==-1)this.shadowLights.splice(k,1)
+
 this.baseIntensities.delete(light)
-
-}
-
-setGlobalIntensity(multiplier){
-
-for(const light of this.dynamicLights){
-
-const base=this.baseIntensities.get(light)||10
-
-light.intensity=base*multiplier
-
-}
-
-}
-
-setColor(color){
-
-for(const light of this.lights){
-
-light.color.set(color)
-
-}
+this.baseColors.delete(light)
 
 }
 
@@ -259,11 +366,35 @@ return this.lights
 
 }
 
+getKeyLight(){
+
+return this.keyLight
+
+}
+
+getAmbientLight(){
+
+return this.ambientLight
+
+}
+
+getRimLight(){
+
+return this.rimLight
+
+}
+
+getFillLight(){
+
+return this.fillLight
+
+}
+
 dispose(){
 
 if(this.disposed)return
 
-this.state='disposing'
+this.state=LIGHTING_STATE.DISPOSING
 
 for(const light of this.lights){
 
@@ -279,8 +410,10 @@ light.shadow.map.dispose()
 
 this.lights.length=0
 this.dynamicLights.length=0
+this.shadowLights.length=0
 
 this.baseIntensities.clear()
+this.baseColors.clear()
 
 this.ambientLight=null
 this.keyLight=null
@@ -289,13 +422,18 @@ this.fillLight=null
 
 this.tmpVec=null
 this.tmpVec2=null
+this.tmpVec3=null
+
+this._cameraObject=null
+this._cameraPosition=null
 
 this.scene=null
 this.camera=null
 
+this.initialized=false
 this.disposed=true
 
-this.state='disposed'
+this.state=LIGHTING_STATE.DISPOSED
 
 }
 
