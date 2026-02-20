@@ -1,9 +1,9 @@
 import * as THREE from 'https://jspm.dev/three'
-import { Renderer } from '../renderer/Renderer.js'
-import { SceneManager } from '../scene/SceneManager.js'
-import { CameraSystem } from '../camera/CameraSystem.js'
-import { PerformanceMonitor } from '../systems/PerformanceMonitor.js'
-import { PerformanceScaler } from '../systems/PerformanceScaler.js'
+import {Renderer} from '../renderer/Renderer.js'
+import {SceneManager} from '../scene/SceneManager.js'
+import {CameraSystem} from '../camera/CameraSystem.js'
+import {PerformanceMonitor} from '../systems/PerformanceMonitor.js'
+import {PerformanceScaler} from '../systems/PerformanceScaler.js'
 
 const ENGINE_STATE={
 CONSTRUCTED:0,
@@ -62,6 +62,8 @@ this._boundVisibility=this._handleVisibility.bind(this)
 
 this._lastNow=0
 
+Object.seal(this)
+
 }
 
 async init(){
@@ -90,7 +92,7 @@ this.sceneManager=new SceneManager({
 engine:this
 })
 
-await this.sceneManager.init()
+await this.sceneManager.init?.()
 
 this.performanceMonitor=new PerformanceMonitor({
 targetFPS:60,
@@ -110,6 +112,25 @@ maxScale:1,
 minScale:0.5
 }
 )
+
+const pipeline=this.renderer.pipeline
+
+if(pipeline){
+
+this.performanceScaler.attachPipeline(pipeline)
+
+const size=this.renderer.getSize?.()
+
+if(size){
+
+this.performanceScaler.setSize(
+size.width,
+size.height
+)
+
+}
+
+}
 
 }
 
@@ -180,6 +201,8 @@ if(!this.paused)return
 this.paused=false
 
 this.clock.start()
+
+this._lastNow=performance.now()
 
 this.state=ENGINE_STATE.RUNNING
 
@@ -270,7 +293,10 @@ if(this.performanceMonitor){
 
 const fps=this.performanceMonitor.update(delta)
 
-this.performanceScaler?.update?.(fps)
+this.performanceScaler?.update?.(
+fps,
+delta
+)
 
 }
 
@@ -381,6 +407,17 @@ console.warn('[ENGINE DISPOSE ERROR]',e)
 _handleResize(){
 
 this.renderer?.resize?.()
+
+const size=this.renderer?.getSize?.()
+
+if(size){
+
+this.performanceScaler?.setSize?.(
+size.width,
+size.height
+)
+
+}
 
 this._emit('resize')
 
