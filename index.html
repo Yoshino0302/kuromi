@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
 
 <meta charset="UTF-8">
@@ -26,43 +27,28 @@ viewport-fit=cover
 
 <meta http-equiv="X-UA-Compatible" content="IE=edge">
 
+<meta name="color-scheme" content="dark">
+
 <title>Kuromi Engine</title>
 
-<link rel="preload"
-href="src/main.js"
-as="script"
-crossorigin="anonymous"
->
+<link rel="preconnect" href="https://jspm.dev" crossorigin>
+<link rel="dns-prefetch" href="https://jspm.dev">
 
-<link rel="modulepreload"
-href="src/core/Engine.js"
->
+<link rel="modulepreload" href="./src/main.js">
+<link rel="modulepreload" href="./src/core/Engine.js">
+<link rel="modulepreload" href="./src/renderer/Renderer.js">
+<link rel="modulepreload" href="./src/scene/SceneManager.js">
+<link rel="modulepreload" href="./src/camera/CameraSystem.js">
+<link rel="modulepreload" href="./src/systems/PerformanceMonitor.js">
+<link rel="modulepreload" href="./src/systems/PerformanceScaler.js">
 
-<link rel="modulepreload"
-href="src/renderer/Renderer.js"
->
-
-<link rel="modulepreload"
-href="src/scene/SceneManager.js"
->
-
-<link rel="modulepreload"
-href="src/camera/CameraSystem.js"
->
-
-<link rel="modulepreload"
-href="src/systems/PerformanceMonitor.js"
->
-
-<link rel="modulepreload"
-href="src/systems/PerformanceScaler.js"
->
-
-<link rel="stylesheet"
-href="styles.css"
->
+<link rel="stylesheet" href="styles.css">
 
 <style>
+
+:root{
+color-scheme:dark;
+}
 
 html,body{
 margin:0;
@@ -73,6 +59,8 @@ overflow:hidden;
 background:#000;
 touch-action:none;
 overscroll-behavior:none;
+-webkit-font-smoothing:antialiased;
+-moz-osx-font-smoothing:grayscale;
 }
 
 #kuromi-engine-canvas{
@@ -83,6 +71,31 @@ width:100%;
 height:100%;
 display:block;
 outline:none;
+contain:strict;
+}
+
+#engine-loader{
+position:fixed;
+top:0;
+left:0;
+width:100%;
+height:100%;
+display:flex;
+align-items:center;
+justify-content:center;
+background:#000;
+color:#fff;
+font-family:sans-serif;
+font-size:12px;
+letter-spacing:2px;
+z-index:9999;
+opacity:1;
+transition:opacity 0.6s ease;
+pointer-events:none;
+}
+
+#engine-loader.hidden{
+opacity:0;
 }
 
 </style>
@@ -96,17 +109,75 @@ id="kuromi-engine-canvas"
 tabindex="-1"
 ></canvas>
 
+<div id="engine-loader">
+INITIALIZING KUROMI ENGINE
+</div>
+
 <script type="module">
 
-import boot from './src/main.js'
+import EngineBootstrap from './src/main.js'
 
-function safeBoot(){
+const loader=document.getElementById('engine-loader')
 
-if(document.visibilityState==='hidden'){
+let bootStarted=false
+
+function hideLoader(){
+
+if(!loader)return
+
+loader.classList.add('hidden')
+
+setTimeout(()=>{
+loader.remove()
+},700)
+
+}
+
+async function safeBoot(){
+
+if(bootStarted)return
+
+bootStarted=true
+
+try{
+
+await EngineBootstrap.boot()
+
+hideLoader()
+
+}catch(e){
+
+console.error('[KUROMI ENGINE BOOT FAILURE]',e)
+
+if(loader){
+
+loader.textContent='ENGINE FAILED TO START'
+
+}
+
+}
+
+}
+
+function bootWhenVisible(){
+
+if(document.visibilityState==='visible'){
+
+safeBoot()
+
+return
+
+}
 
 const onVisible=()=>{
-document.removeEventListener('visibilitychange',onVisible)
-boot.boot()
+
+document.removeEventListener(
+'visibilitychange',
+onVisible
+)
+
+safeBoot()
+
 }
 
 document.addEventListener(
@@ -115,29 +186,37 @@ onVisible,
 {once:true}
 )
 
+}
+
+if(document.readyState==='complete'||
+document.readyState==='interactive'){
+
+bootWhenVisible()
+
 }else{
-
-boot.boot()
-
-}
-
-}
-
-if(document.readyState==='loading'){
 
 document.addEventListener(
 'DOMContentLoaded',
-safeBoot,
+bootWhenVisible,
 {once:true}
 )
 
-}else{
-
-safeBoot()
-
 }
+
+window.addEventListener(
+'pagehide',
+()=>{},
+{passive:true}
+)
+
+window.addEventListener(
+'beforeunload',
+()=>{},
+{passive:true}
+)
 
 </script>
 
 </body>
+
 </html>
