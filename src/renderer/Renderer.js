@@ -30,6 +30,8 @@ this.width=1
 this.height=1
 
 this.pixelRatio=1
+this.appliedPixelRatio=0
+
 this.maxPixelRatio=Math.min(
 options.maxPixelRatio||window.devicePixelRatio||1,
 2
@@ -38,6 +40,8 @@ options.maxPixelRatio||window.devicePixelRatio||1,
 this._contextLost=false
 this._rendering=false
 
+this._resizeObserver=null
+
 this._boundResize=this._handleResize.bind(this)
 this._boundContextLost=this._handleContextLost.bind(this)
 this._boundContextRestored=this._handleContextRestored.bind(this)
@@ -45,7 +49,6 @@ this._boundContextRestored=this._handleContextRestored.bind(this)
 this._configureRenderer()
 
 this._installContextHandlers()
-
 this._installResizeHandlers()
 
 this.resize(
@@ -92,9 +95,7 @@ failIfMajorPerformanceCaveat:false
 
 if(!gl){
 
-throw new Error(
-'[KUROMI ENGINE] WebGL2 not supported'
-)
+throw new Error('[KUROMI ENGINE] WebGL2 required')
 
 }
 
@@ -123,13 +124,17 @@ _configureRenderer(){
 
 const r=this.renderer
 
-this._updatePixelRatio()
+this._applyPixelRatio(
+Math.min(
+window.devicePixelRatio||1,
+this.maxPixelRatio
+)
+)
 
 r.outputColorSpace=THREE.SRGBColorSpace
 
 r.toneMapping=THREE.ACESFilmicToneMapping
-
-r.toneMappingExposure=1.15
+r.toneMappingExposure=1.2
 
 r.shadowMap.enabled=true
 r.shadowMap.type=THREE.PCFSoftShadowMap
@@ -137,7 +142,7 @@ r.shadowMap.type=THREE.PCFSoftShadowMap
 r.physicallyCorrectLights=true
 
 r.setClearColor(
-ValentineColors.background,
+ValentineColors.backgroundBottom,
 1
 )
 
@@ -145,18 +150,16 @@ r.info.autoReset=true
 
 }
 
-_updatePixelRatio(){
+_applyPixelRatio(ratio){
 
-const target=Math.min(
-window.devicePixelRatio||1,
-this.maxPixelRatio
-)
+ratio=Math.max(0.25,Math.min(ratio,this.maxPixelRatio))
 
-if(target===this.pixelRatio)return
+if(Math.abs(ratio-this.appliedPixelRatio)<0.001)return
 
-this.pixelRatio=target
+this.pixelRatio=ratio
+this.appliedPixelRatio=ratio
 
-this.renderer.setPixelRatio(this.pixelRatio)
+this.renderer.setPixelRatio(ratio)
 
 }
 
@@ -170,11 +173,11 @@ this._boundResize,
 
 if(typeof ResizeObserver!=='undefined'){
 
-this._resizeObserver=new ResizeObserver(()=>{
-this._handleResize()
-})
+this._resizeObserver=new ResizeObserver(
+this._boundResize
+)
 
-this._resizeObserver.observe(document.body)
+this._resizeObserver.observe(this.canvas)
 
 }
 
@@ -206,9 +209,7 @@ this.state=RENDERER_STATE.CONTEXT_LOST
 
 if(this.debug){
 
-console.warn(
-'[KUROMI ENGINE] WebGL context lost'
-)
+console.warn('[KUROMI ENGINE] WebGL context lost')
 
 }
 
@@ -226,9 +227,7 @@ this.state=RENDERER_STATE.CONTEXT_RESTORED
 
 if(this.debug){
 
-console.warn(
-'[KUROMI ENGINE] WebGL context restored'
-)
+console.warn('[KUROMI ENGINE] WebGL context restored')
 
 }
 
@@ -238,10 +237,10 @@ _handleResize(){
 
 if(this.disposed)return
 
-this.resize(
-window.innerWidth,
-window.innerHeight
-)
+const width=this.canvas.clientWidth||window.innerWidth
+const height=this.canvas.clientHeight||window.innerHeight
+
+this.resize(width,height)
 
 }
 
@@ -256,8 +255,6 @@ if(width===this.width&&height===this.height)return
 
 this.width=width
 this.height=height
-
-this._updatePixelRatio()
 
 this.renderer.setSize(
 width,
@@ -291,11 +288,8 @@ sceneManager.resize(width,height)
 render(scene,camera){
 
 if(this.disposed)return
-
 if(this._contextLost)return
-
 if(this._rendering)return
-
 if(!scene||!camera)return
 
 this._rendering=true
@@ -303,6 +297,18 @@ this._rendering=true
 this.renderer.render(scene,camera)
 
 this._rendering=false
+
+}
+
+setPixelRatio(ratio){
+
+this._applyPixelRatio(ratio)
+
+}
+
+getPixelRatio(){
+
+return this.pixelRatio
 
 }
 
@@ -331,6 +337,12 @@ width:this.width,
 height:this.height,
 pixelRatio:this.pixelRatio
 }
+
+}
+
+isContextLost(){
+
+return this._contextLost
 
 }
 
@@ -365,9 +377,7 @@ this._boundContextRestored
 
 this.renderer.dispose()
 
-const ext=this.gl.getExtension(
-'WEBGL_lose_context'
-)
+const ext=this.gl.getExtension('WEBGL_lose_context')
 
 if(ext){
 
