@@ -17,40 +17,80 @@ options.near||0.1,
 options.far||1000
 )
 
-this.camera.position.set(0,2,8)
+this.camera.matrixAutoUpdate=true
 
-this.target=new THREE.Vector3(0,0,0)
-this.currentLook=new THREE.Vector3(0,0,0)
+this.position=this.camera.position
 
-this.basePosition=this.camera.position.clone()
+this.target=new THREE.Vector3()
+this.currentLook=new THREE.Vector3()
+
+this.basePosition=new THREE.Vector3()
+
+this.desiredPosition=new THREE.Vector3()
+this.desiredLook=new THREE.Vector3()
+
+this.velocity=new THREE.Vector3()
+this.lookVelocity=new THREE.Vector3()
 
 this.time=0
 
-this.orbitRadius=options.orbitRadius||8
-this.orbitSpeed=options.orbitSpeed||0.15
+this.orbitRadius=options.orbitRadius??8
+this.orbitSpeed=options.orbitSpeed??0.15
 this.orbitEnabled=true
 
-this.breathAmplitude=options.breathAmplitude||0.25
-this.breathSpeed=options.breathSpeed||1.2
+this.breathAmplitude=options.breathAmplitude??0.25
+this.breathSpeed=options.breathSpeed??1.2
 this.breathEnabled=true
 
-this.shakeOffset=new THREE.Vector3()
-this.shakeInternal=new THREE.Vector3()
-this.shakeAmplitude=options.shakeAmplitude||0.04
-this.shakeSpeed=options.shakeSpeed||18
+this.shakeAmplitude=options.shakeAmplitude??0.04
+this.shakeSpeed=options.shakeSpeed??18
 this.shakeEnabled=true
 
-this.positionSmooth=options.positionSmooth||3.5
-this.lookSmooth=options.lookSmooth||4.5
+this.externalShake=new THREE.Vector3()
+this.internalShake=new THREE.Vector3()
+this.finalShake=new THREE.Vector3()
+
+this.positionSmooth=options.positionSmooth??6.0
+this.lookSmooth=options.lookSmooth??8.0
 
 this.tmpVec=new THREE.Vector3()
-this.tmpLook=new THREE.Vector3()
+this.tmpVec2=new THREE.Vector3()
 
-this.velocity=new THREE.Vector3()
+this.forward=new THREE.Vector3()
+this.right=new THREE.Vector3()
+this.up=new THREE.Vector3(0,1,0)
+
+this.quaternion=new THREE.Quaternion()
+this.tmpQuat=new THREE.Quaternion()
 
 this._installResizeHandler()
 
+this._reset()
+
 this.state='initialized'
+
+}
+
+_reset(){
+
+this.position.set(0,2,8)
+
+this.basePosition.copy(this.position)
+
+this.target.set(0,0,0)
+
+this.currentLook.copy(this.target)
+
+this.desiredPosition.copy(this.position)
+
+this.desiredLook.copy(this.target)
+
+this.velocity.set(0,0,0)
+this.lookVelocity.set(0,0,0)
+
+this.externalShake.set(0,0,0)
+this.internalShake.set(0,0,0)
+this.finalShake.set(0,0,0)
 
 }
 
@@ -75,74 +115,94 @@ update(delta){
 
 if(this.disposed)return
 
+if(delta<=0)return
+
 this.time+=delta
 
-this._computeOrbit(delta)
-
-this._computeBreath(delta)
+this._computeDesiredTransform(delta)
 
 this._computeShake(delta)
 
-this._applyPosition(delta)
+this._integratePosition(delta)
 
-this._applyLook(delta)
+this._integrateLook(delta)
 
-}
-
-_computeOrbit(delta){
-
-if(!this.orbitEnabled)return
-
-const orbitAngle=this.time*this.orbitSpeed
-
-const x=this.target.x+Math.cos(orbitAngle)*this.orbitRadius
-const z=this.target.z+Math.sin(orbitAngle)*this.orbitRadius
-
-this.tmpVec.setX(x)
-this.tmpVec.setZ(z)
+this._applyTransform()
 
 }
 
-_computeBreath(delta){
+_computeDesiredTransform(delta){
 
-if(!this.breathEnabled)return
+const t=this.time
 
-const breath=Math.sin(this.time*this.breathSpeed)*this.breathAmplitude
+let x=this.target.x
+let y=this.target.y+2
+let z=this.target.z
 
-this.tmpVec.setY(this.target.y+2.0+breath)
+if(this.orbitEnabled){
+
+const angle=t*this.orbitSpeed
+
+x+=Math.cos(angle)*this.orbitRadius
+z+=Math.sin(angle)*this.orbitRadius
+
+}
+
+if(this.breathEnabled){
+
+y+=Math.sin(t*this.breathSpeed)*this.breathAmplitude
+
+}
+
+this.desiredPosition.set(x,y,z)
+
+this.desiredLook.copy(this.target)
 
 }
 
 _computeShake(delta){
 
-if(!this.shakeEnabled)return
+if(this.shakeEnabled){
 
-const shakeX=Math.sin(this.time*this.shakeSpeed)*this.shakeAmplitude
-const shakeY=Math.cos(this.time*this.shakeSpeed*1.3)*this.shakeAmplitude
-const shakeZ=Math.sin(this.time*this.shakeSpeed*0.7)*this.shakeAmplitude
+const t=this.time*this.shakeSpeed
 
-this.shakeInternal.set(shakeX,shakeY,shakeZ)
+this.internalShake.set(
+Math.sin(t)*this.shakeAmplitude,
+Math.cos(t*1.3)*this.shakeAmplitude,
+Math.sin(t*0.7)*this.shakeAmplitude
+)
 
-}
+}else{
 
-_applyPosition(delta){
-
-this.tmpVec.add(this.shakeInternal)
-this.tmpVec.add(this.shakeOffset)
-
-const alpha=Math.min(delta*this.positionSmooth,1.0)
-
-this.camera.position.lerp(this.tmpVec,alpha)
+this.internalShake.set(0,0,0)
 
 }
 
-_applyLook(delta){
+this.finalShake.copy(this.internalShake)
+this.finalShake.add(this.externalShake)
 
-this.tmpLook.copy(this.target)
+}
 
-const alpha=Math.min(delta*this.lookSmooth,1.0)
+_integratePosition(delta){
 
-this.currentLook.lerp(this.tmpLook,alpha)
+const smooth=1-Math.exp(-this.positionSmooth*delta)
+
+this.tmpVec.copy(this.desiredPosition)
+this.tmpVec.add(this.finalShake)
+
+this.position.lerp(this.tmpVec,smooth)
+
+}
+
+_integrateLook(delta){
+
+const smooth=1-Math.exp(-this.lookSmooth*delta)
+
+this.currentLook.lerp(this.desiredLook,smooth)
+
+}
+
+_applyTransform(){
 
 this.camera.lookAt(this.currentLook)
 
@@ -162,7 +222,9 @@ this.target.copy(vec3)
 
 setPosition(x,y,z){
 
-this.camera.position.set(x,y,z)
+this.position.set(x,y,z)
+
+this.desiredPosition.copy(this.position)
 
 }
 
@@ -214,13 +276,13 @@ addShake(offset){
 
 if(!offset)return
 
-this.shakeOffset.add(offset)
+this.externalShake.add(offset)
 
 }
 
 clearShake(){
 
-this.shakeOffset.set(0,0,0)
+this.externalShake.set(0,0,0)
 
 }
 
@@ -238,7 +300,7 @@ return this.camera
 
 getPosition(){
 
-return this.camera.position
+return this.position
 
 }
 
@@ -250,11 +312,29 @@ return this.target
 
 getForwardVector(){
 
-const forward=new THREE.Vector3()
+this.camera.getWorldDirection(this.forward)
 
-this.camera.getWorldDirection(forward)
+return this.forward
 
-return forward
+}
+
+getRightVector(){
+
+this.getForwardVector()
+
+this.right.crossVectors(this.forward,this.up).normalize()
+
+return this.right
+
+}
+
+getUpVector(){
+
+this.right.crossVectors(this.forward,this.up).normalize()
+
+this.up.crossVectors(this.right,this.forward).normalize()
+
+return this.up
 
 }
 
@@ -268,15 +348,34 @@ window.removeEventListener('resize',this._resizeHandler)
 
 this.camera=null
 
+this.position=null
+
 this.target=null
 this.currentLook=null
-this.tmpVec=null
-this.tmpLook=null
-this.shakeOffset=null
-this.shakeInternal=null
+
+this.basePosition=null
+this.desiredPosition=null
+this.desiredLook=null
+
 this.velocity=null
+this.lookVelocity=null
+
+this.externalShake=null
+this.internalShake=null
+this.finalShake=null
+
+this.tmpVec=null
+this.tmpVec2=null
+
+this.forward=null
+this.right=null
+this.up=null
+
+this.quaternion=null
+this.tmpQuat=null
 
 this.disposed=true
+
 this.state='disposed'
 
 }
