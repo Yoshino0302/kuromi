@@ -1,110 +1,244 @@
 import {Engine} from '../core/Engine.js'
-import {EngineConfig} from '../core/EngineConfig.js'
-import {Lifecycle} from '../core/Lifecycle.js'
-import {App} from './App.js'
 import {AppState} from './AppState.js'
-import {RendererConfig} from '../config/RendererConfig.js'
-import {CameraConfig} from '../config/CameraConfig.js'
-import {LightingConfig} from '../config/LightingConfig.js'
+import {Lifecycle} from '../core/Lifecycle.js'
+
 export class AppBootstrap{
-static instance=null
-static async boot(options={}){
-if(AppBootstrap.instance)return AppBootstrap.instance
-const bootstrap=new AppBootstrap(options)
-AppBootstrap.instance=bootstrap
-await bootstrap.initialize()
-return bootstrap
-}
-constructor(options){
+
+constructor(options={}){
+
 this.options=options
+
 this.engine=null
-this.app=null
-this.state=new AppState()
-this.lifecycle=new Lifecycle()
-this.container=null
-this.resizeObserver=null
-this.boundResize=this.handleResize.bind(this)
-this.boundVisibility=this.handleVisibility.bind(this)
-this.boundUpdate=this.update.bind(this)
-this.boundPause=this.pause.bind(this)
-this.boundResume=this.resume.bind(this)
-this.boundStop=this.stop.bind(this)
+this.state=null
+this.lifecycle=null
+
+this.container=options.container||document.body
+this.canvas=options.canvas||null
+
+this.autoStart=options.autoStart!==false
+
+this._bootPromise=null
+this._started=false
+this._destroyed=false
+
+this._boundVisibility=this._handleVisibility.bind(this)
+this._boundFocus=this._handleFocus.bind(this)
+this._boundBlur=this._handleBlur.bind(this)
+
 }
-async initialize(){
-this.resolveContainer()
-const engineConfig=new EngineConfig(this.options.engine||{})
-const rendererConfig=new RendererConfig(this.options.renderer||{})
-const cameraConfig=new CameraConfig(this.options.camera||{})
-const lightingConfig=new LightingConfig(this.options.lighting||{})
-this.engine=new Engine({engineConfig,rendererConfig,cameraConfig,lightingConfig,container:this.container,state:this.state})
-await this.engine.initialize()
-this.app=new App(this.engine,this.state,this.options.app||{})
-await this.app.initialize()
-this.setupObservers()
-this.setupLifecycle()
-this.handleResize()
+
+async boot(){
+
+if(this._bootPromise)return this._bootPromise
+
+this._bootPromise=this._boot()
+
+return this._bootPromise
+
+}
+
+async _boot(){
+
+if(this._destroyed)throw new Error('AppBootstrap destroyed')
+
+this.state=new AppState(this)
+
+this.state.bootstrap()
+
+this.engine=new Engine({
+container:this.container,
+canvas:this.canvas,
+...this.options.engine
+})
+
+this.lifecycle=new Lifecycle(this.engine)
+
+this._installDOMHooks()
+
+this.state.initialize()
+
+await this.engine.init()
+
+this.lifecycle.register('engine',this.engine,{
+priority:0,
+autoInit:false,
+autoStart:false
+})
+
+this.state.start()
+
+if(this.autoStart){
+
+await this.start()
+
+}
+
+return this
+
+}
+
+async start(){
+
+if(this._started)return
+
+this._started=true
+
 await this.engine.start()
-await this.app.start()
-this.lifecycle.start()
+
+this.state.start()
+
 }
-resolveContainer(){
-if(this.options.container instanceof HTMLElement)this.container=this.options.container
-else if(typeof this.options.container==='string')this.container=document.getElementById(this.options.container)
-if(!this.container)this.container=document.getElementById('app')||document.body
-}
-setupObservers(){
-this.resizeObserver=new ResizeObserver(this.boundResize)
-this.resizeObserver.observe(this.container)
-document.addEventListener('visibilitychange',this.boundVisibility,{passive:true})
-window.addEventListener('error',e=>this.handleError(e.error||e),{passive:true})
-window.addEventListener('unhandledrejection',e=>this.handleError(e.reason),{passive:true})
-}
-setupLifecycle(){
-this.lifecycle.on('update',this.boundUpdate)
-this.lifecycle.on('pause',this.boundPause)
-this.lifecycle.on('resume',this.boundResume)
-this.lifecycle.on('stop',this.boundStop)
-}
-update(dt){
-if(this.engine)this.engine.update(dt)
-if(this.app)this.app.update(dt)
-}
+
 pause(){
-if(this.engine)this.engine.pause()
-if(this.app)this.app.pause()
+
+if(!this.engine)return
+
+this.engine.pause()
+
+this.state.pause()
+
 }
+
 resume(){
-if(this.engine)this.engine.resume()
-if(this.app)this.app.resume()
+
+if(!this.engine)return
+
+this.engine.resume()
+
+this.state.resume()
+
 }
+
 stop(){
-if(this.resizeObserver){this.resizeObserver.disconnect();this.resizeObserver=null}
-document.removeEventListener('visibilitychange',this.boundVisibility)
-if(this.engine)this.engine.stop()
-if(this.app)this.app.stop()
-this.lifecycle.stop()
+
+if(!this.engine)return
+
+this.engine.stop()
+
+this.state.stop()
+
 }
-handleResize(){
-if(!this.container||!this.engine)return
-const rect=this.container.getBoundingClientRect()
-const width=Math.max(1,Math.floor(rect.width))
-const height=Math.max(1,Math.floor(rect.height))
-const dpr=window.devicePixelRatio||1
-this.engine.resize(width,height,dpr)
+
+async shutdown(){
+
+if(this._destroyed)return
+
+this.state.shutdown()
+
+await this.lifecycle.dispose()
+
+await this.engine.shutdown()
+
+this._removeDOMHooks()
+
+this.state.destroy()
+
+this.engine=null
+this.lifecycle=null
+
+this._destroyed=true
+
 }
-handleVisibility(){
-if(document.hidden)this.pause()
-else this.resume()
-}
-handleError(error){
-console.error('[KUROMI ENGINE FATAL]',error)
-this.state.set('fatalError',error)
+
+_handleVisibility(){
+
+const visible=document.visibilityState==='visible'
+
+this.state.setVisibility(visible)
+
+if(!visible){
+
 this.pause()
-}
-}
-export async function bootApp(options){return AppBootstrap.boot(options)}
-if(document.readyState==='complete'||document.readyState==='interactive'){
-queueMicrotask(()=>{AppBootstrap.boot().catch(e=>console.error(e))})
+
 }else{
-window.addEventListener('DOMContentLoaded',()=>{AppBootstrap.boot().catch(e=>console.error(e))},{once:true})
+
+this.resume()
+
+}
+
+}
+
+_handleFocus(){
+
+this.state.setFocus(true)
+
+}
+
+_handleBlur(){
+
+this.state.setFocus(false)
+
+}
+
+_installDOMHooks(){
+
+document.addEventListener(
+'visibilitychange',
+this._boundVisibility,
+{passive:true}
+)
+
+window.addEventListener(
+'focus',
+this._boundFocus,
+{passive:true}
+)
+
+window.addEventListener(
+'blur',
+this._boundBlur,
+{passive:true}
+)
+
+}
+
+_removeDOMHooks(){
+
+document.removeEventListener(
+'visibilitychange',
+this._boundVisibility
+)
+
+window.removeEventListener(
+'focus',
+this._boundFocus
+)
+
+window.removeEventListener(
+'blur',
+this._boundBlur
+)
+
+}
+
+getEngine(){
+
+return this.engine
+
+}
+
+getState(){
+
+return this.state
+
+}
+
+getLifecycle(){
+
+return this.lifecycle
+
+}
+
+isRunning(){
+
+return this.state?.isRunning?.()??false
+
+}
+
+isDestroyed(){
+
+return this._destroyed
+
+}
+
 }
