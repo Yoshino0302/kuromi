@@ -1,10 +1,16 @@
+const SEQUENCER_STATE={
+IDLE:0,
+PLAYING:1,
+PAUSED:2,
+STOPPED:3,
+DISPOSED:4
+}
+
 export class CinematicSequencer{
 
-constructor(camera,options={}){
+constructor(camera){
 
-this.camera=camera
-
-this.options=options
+this.camera=camera||null
 
 this.track=null
 
@@ -12,211 +18,187 @@ this.time=0
 this.duration=0
 
 this.playing=false
-this.paused=false
+this.loop=false
+this.playbackRate=1
 
-this.loop=options.loop??true
-this.pingPong=options.pingPong??false
+this.state=SEQUENCER_STATE.IDLE
 
-this.direction=1
+this.weight=1
 
-this.timeScale=options.timeScale??1
-
-this.state='idle'
-
-this.disposed=false
+this._disposed=false
 
 this._lastSample=null
+
+this._onComplete=null
+this._onLoop=null
 
 }
 
 setTrack(track){
 
-if(this.disposed)return
+if(this._disposed)return
 
-this.track=track
-
-if(track){
-
-this.duration=track.duration||0
-
-}else{
-
-this.duration=0
-
-}
+this.track=track||null
 
 this.time=0
+
+this.duration=track?.duration||0
 
 this._lastSample=null
-
-this.state='ready'
-
-}
-
-clearTrack(){
-
-this.track=null
-
-this.duration=0
-
-this.time=0
-
-this._lastSample=null
-
-this.state='idle'
-
-}
-
-play(){
-
-if(this.disposed)return
-
-if(!this.track)return
-
-this.playing=true
-this.paused=false
-
-this.state='playing'
-
-}
-
-pause(){
-
-if(this.disposed)return
-
-if(!this.playing)return
-
-this.paused=true
-
-this.state='paused'
-
-}
-
-resume(){
-
-if(this.disposed)return
-
-if(!this.track)return
-
-this.playing=true
-this.paused=false
-
-this.state='playing'
-
-}
-
-stop(){
-
-if(this.disposed)return
-
-this.playing=false
-this.paused=false
-
-this.time=0
-
-this.state='stopped'
-
-}
-
-seek(time){
-
-if(this.disposed)return
-
-if(!this.track)return
-
-this.time=this._clampTime(time)
-
-this._applySample()
 
 }
 
 setLoop(enabled){
 
-this.loop=enabled
+this.loop=enabled===true
 
 }
 
-setTimeScale(scale){
+setPlaybackRate(rate){
 
-this.timeScale=scale
+if(!Number.isFinite(rate))return
+
+this.playbackRate=Math.max(0,rate)
+
+}
+
+setWeight(weight){
+
+this.weight=Math.max(0,Math.min(1,weight))
+
+}
+
+onComplete(callback){
+
+this._onComplete=callback
+
+}
+
+onLoop(callback){
+
+this._onLoop=callback
+
+}
+
+play(reset=true){
+
+if(this._disposed)return
+
+if(!this.track)return
+
+if(reset)this.time=0
+
+this.playing=true
+
+this.state=SEQUENCER_STATE.PLAYING
+
+}
+
+pause(){
+
+if(this._disposed)return
+
+if(!this.playing)return
+
+this.playing=false
+
+this.state=SEQUENCER_STATE.PAUSED
+
+}
+
+resume(){
+
+if(this._disposed)return
+
+if(!this.track)return
+
+this.playing=true
+
+this.state=SEQUENCER_STATE.PLAYING
+
+}
+
+stop(){
+
+if(this._disposed)return
+
+this.playing=false
+
+this.time=0
+
+this.state=SEQUENCER_STATE.STOPPED
+
+}
+
+seek(time){
+
+if(this._disposed)return
+
+if(!this.track)return
+
+this.time=Math.max(0,Math.min(time,this.duration))
+
+this._applySample(this.track.sample(this.time),1)
 
 }
 
 update(delta){
 
-if(this.disposed)return
+if(this._disposed)return
 
 if(!this.playing)return
-
-if(this.paused)return
 
 if(!this.track)return
 
 if(this.duration<=0)return
 
-this._advanceTime(delta)
+delta=Math.max(0,delta)
 
-this._applySample()
+this.time+=delta*this.playbackRate
 
-}
+if(this.time>=this.duration){
 
-_advanceTime(delta){
-
-const scaledDelta=delta*this.timeScale*this.direction
-
-this.time+=scaledDelta
-
-if(this.time>this.duration){
-
-if(this.pingPong){
-
-this.time=this.duration
-this.direction=-1
-
-}else if(this.loop){
+if(this.loop){
 
 this.time=this.time%this.duration
 
-}else{
-
-this.time=this.duration
-this.stop()
-return
-
-}
-
-}
-
-if(this.time<0){
-
-if(this.pingPong){
-
-this.time=0
-this.direction=1
-
-}else if(this.loop){
-
-this.time=this.duration
+if(this._onLoop)this._onLoop()
 
 }else{
 
-this.time=0
-this.stop()
-return
+this.time=this.duration
+
+this.playing=false
+
+this.state=SEQUENCER_STATE.STOPPED
+
+if(this._onComplete)this._onComplete()
 
 }
 
 }
-
-}
-
-_applySample(){
 
 const sample=this.track.sample(this.time)
 
-if(!sample)return
+if(sample){
+
+this._applySample(sample,this.weight)
 
 this._lastSample=sample
+
+}
+
+}
+
+_applySample(sample,weight){
+
+if(!this.camera)return
+
+if(!sample)return
+
+if(weight<=0)return
+
+if(weight>=1){
 
 this.camera.setPosition(
 sample.position.x,
@@ -230,15 +212,38 @@ sample.target.y,
 sample.target.z
 )
 
+return
+
 }
 
-_clampTime(time){
+const currentPos=this.camera.getPosition?.()
+const currentTarget=this.camera.getTarget?.()
 
-if(time<0)return 0
+if(currentPos){
 
-if(time>this.duration)return this.duration
+this.camera.setPosition(
+currentPos.x+(sample.position.x-currentPos.x)*weight,
+currentPos.y+(sample.position.y-currentPos.y)*weight,
+currentPos.z+(sample.position.z-currentPos.z)*weight
+)
 
-return time
+}
+
+if(currentTarget){
+
+this.camera.setTarget(
+currentTarget.x+(sample.target.x-currentTarget.x)*weight,
+currentTarget.y+(sample.target.y-currentTarget.y)*weight,
+currentTarget.z+(sample.target.z-currentTarget.z)*weight
+)
+
+}
+
+}
+
+isPlaying(){
+
+return this.playing
 
 }
 
@@ -254,31 +259,31 @@ return this.duration
 
 }
 
-isPlaying(){
+getProgress(){
 
-return this.playing&&!this.paused
+if(this.duration<=0)return 0
 
-}
-
-isPaused(){
-
-return this.paused
+return this.time/this.duration
 
 }
 
 dispose(){
 
-if(this.disposed)return
+if(this._disposed)return
+
+this.stop()
 
 this.track=null
-
 this.camera=null
 
 this._lastSample=null
 
-this.disposed=true
+this._onComplete=null
+this._onLoop=null
 
-this.state='disposed'
+this._disposed=true
+
+this.state=SEQUENCER_STATE.DISPOSED
 
 }
 
