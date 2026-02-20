@@ -21,20 +21,29 @@ this.mesh=null
 this.geometry=null
 this.material=null
 
-this.clock=new THREE.Clock()
+this.time=0
 
-this.rotationSpeed=options.rotationSpeed||0.5
-this.pulseSpeed=options.pulseSpeed||2.0
-this.pulseAmplitude=options.pulseAmplitude||0.15
+this.rotationSpeed=options.rotationSpeed??0.45
 
-this.baseScale=1
+this.pulseSpeed=options.pulseSpeed??2.0
+this.pulseAmplitude=options.pulseAmplitude??0.15
+
+this.baseScale=options.baseScale??1.0
+
+this.baseEmissiveIntensity=options.baseEmissiveIntensity??2.5
+this.currentEmissiveIntensity=this.baseEmissiveIntensity
+
+this.cameraReactiveStrength=options.cameraReactiveStrength??0.15
+this.cameraReactiveMax=options.cameraReactiveMax??4.5
 
 this.tmpVec=new THREE.Vector3()
 
 this._createPortal()
 
 if(this.scene){
+
 this.scene.add(this.group)
+
 }
 
 this.state='initialized'
@@ -55,14 +64,13 @@ this.material=new THREE.MeshPhysicalMaterial({
 color:this.colors.primary,
 
 emissive:this.colors.glow,
-emissiveIntensity:2.5,
+emissiveIntensity:this.baseEmissiveIntensity,
 
 metalness:0.0,
 roughness:0.0,
 
 transmission:1.0,
 thickness:1.8,
-
 ior:1.45,
 
 transparent:true,
@@ -77,6 +85,8 @@ this.geometry,
 this.material
 )
 
+this.mesh.frustumCulled=false
+
 this.mesh.castShadow=false
 this.mesh.receiveShadow=false
 
@@ -87,16 +97,17 @@ this.group.add(this.mesh)
 update(delta,elapsed){
 
 if(this.disposed)return
+if(delta<=0)return
 
-if(elapsed===undefined){
-elapsed=this.clock.getElapsedTime()
-}
+this.time+=delta
 
 this._updateRotation(delta)
 
-this._updatePulse(elapsed)
+this._updatePulse()
 
-this._updateCameraReactive(elapsed)
+this._updateCameraReactive()
+
+this._applyEmissive()
 
 }
 
@@ -106,17 +117,23 @@ this.group.rotation.z+=delta*this.rotationSpeed
 
 }
 
-_updatePulse(elapsed){
+_updatePulse(){
 
-const pulse=Math.sin(elapsed*this.pulseSpeed)*this.pulseAmplitude
+const pulse=
+Math.sin(this.time*this.pulseSpeed)
+*this.pulseAmplitude
 
 const scale=this.baseScale+pulse
 
-this.group.scale.set(scale,scale,scale)
+this.group.scale.set(
+scale,
+scale,
+scale
+)
 
 }
 
-_updateCameraReactive(elapsed){
+_updateCameraReactive(){
 
 if(!this.camera)return
 
@@ -128,14 +145,23 @@ this.tmpVec.copy(cam.position)
 
 const distance=this.tmpVec.distanceTo(this.group.position)
 
-const intensity=THREE.MathUtils.clamp(
-1.5+(10-distance)*0.15,
-1.5,
-4.0
+const targetIntensity=
+THREE.MathUtils.clamp(
+this.baseEmissiveIntensity+
+(10-distance)*this.cameraReactiveStrength,
+this.baseEmissiveIntensity,
+this.cameraReactiveMax
 )
 
-this.material.emissiveIntensity+=
-(intensity-this.material.emissiveIntensity)*0.05
+this.currentEmissiveIntensity+=
+(targetIntensity-this.currentEmissiveIntensity)*0.08
+
+}
+
+_applyEmissive(){
+
+this.material.emissiveIntensity=
+this.currentEmissiveIntensity
 
 }
 
@@ -149,7 +175,11 @@ setScale(scale){
 
 this.baseScale=scale
 
-this.group.scale.set(scale,scale,scale)
+this.group.scale.set(
+scale,
+scale,
+scale
+)
 
 }
 
@@ -166,7 +196,16 @@ this.pulseSpeed=speed
 
 }
 
-resize(width,height){
+setEmissiveIntensity(intensity){
+
+this.baseEmissiveIntensity=intensity
+
+}
+
+setCameraReactive(strength,max){
+
+this.cameraReactiveStrength=strength
+this.cameraReactiveMax=max
 
 }
 
@@ -183,7 +222,9 @@ if(this.disposed)return
 this.state='disposing'
 
 if(this.scene){
+
 this.scene.remove(this.group)
+
 }
 
 if(this.mesh){
@@ -193,11 +234,15 @@ this.group.remove(this.mesh)
 }
 
 if(this.geometry){
+
 this.geometry.dispose()
+
 }
 
 if(this.material){
+
 this.material.dispose()
+
 }
 
 this.mesh=null
@@ -205,12 +250,14 @@ this.geometry=null
 this.material=null
 
 this.group=null
+
 this.scene=null
 this.camera=null
 
 this.tmpVec=null
 
 this.disposed=true
+
 this.state='disposed'
 
 }
