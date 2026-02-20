@@ -58,6 +58,16 @@ this.delta=0
 this.time=0
 this.frame=0
 
+this.timeScale=1
+this.fixedDelta=1/60
+this.accumulator=0
+this.alpha=0
+this.maxSubSteps=10
+
+this.deterministic=false
+this.lockStep=false
+this.fixedSeed=0
+
 this.maxDelta=0.05
 this.minDelta=0.000001
 
@@ -65,13 +75,11 @@ this.renderer=null
 this.pipeline=null
 this.sceneManager=null
 this.cameraSystem=null
-
 this.systemManager=null
 this.scheduler=null
 this.memoryMonitor=null
 this.assetManager=null
 this.environmentSystem=null
-
 this.performanceMonitor=null
 this.performanceScaler=null
 
@@ -82,6 +90,7 @@ this._initPromise=null
 this._shutdownPromise=null
 
 this._listeners=new Map()
+this._disabledSystems=new WeakSet()
 
 this._resizeObserver=null
 
@@ -107,21 +116,13 @@ this.state=ENGINE_STATE.INITIALIZING
 this._emit('init:start')
 
 this.renderer=new Renderer({...this.options,engine:this})
-
 this.pipeline=new RenderPipeline(this)
-
 this.cameraSystem=new CameraSystem({...this.options,engine:this})
-
 this.sceneManager=new SceneManager({...this.options,engine:this})
-
 this.environmentSystem=new EnvironmentSystem(this)
-
 this.systemManager=new SystemManager(this)
-
 this.scheduler=new TaskScheduler(this)
-
 this.memoryMonitor=new MemoryMonitor(this)
-
 this.assetManager=new AssetManager(this)
 
 await this.pipeline?.init?.()
@@ -155,9 +156,7 @@ this.performanceScaler.attachPipeline?.(this.pipeline)
 const size=this.renderer.getSize?.()
 
 if(size){
-
 this.performanceScaler.setSize(size.width,size.height)
-
 }
 
 }
@@ -210,7 +209,6 @@ if(!this.running)return
 if(this.paused)return
 
 this.paused=true
-
 this.clock.stop()
 
 this.state=ENGINE_STATE.PAUSED
@@ -225,7 +223,6 @@ if(!this.running)return
 if(!this.paused)return
 
 this.paused=false
-
 this.clock.start()
 
 this._lastNow=performance.now()
@@ -233,6 +230,16 @@ this._lastNow=performance.now()
 this.state=ENGINE_STATE.RUNNING
 
 this._emit('resume')
+
+}
+
+setTimeScale(value){
+
+if(!Number.isFinite(value))return
+
+this.timeScale=Math.max(0,value)
+
+this._emit('timescale',this.timeScale)
 
 }
 
@@ -283,37 +290,71 @@ if(!Number.isFinite(delta))delta=0
 if(delta>this.maxDelta)delta=this.maxDelta
 if(delta<this.minDelta)delta=this.minDelta
 
+delta*=this.timeScale
+
 this.delta=delta
 this.time+=delta
 this.frame++
 
+this.accumulator+=delta
+
+let subSteps=0
+
 this._emit('frame:start',delta)
 
-this.scheduler?.update?.(delta)
+while(this.accumulator>=this.fixedDelta&&subSteps<this.maxSubSteps){
 
-this.systemManager?.update?.(delta)
+this._fixedUpdate(this.fixedDelta)
 
-this.environmentSystem?.update?.(delta)
+this.accumulator-=this.fixedDelta
 
-this.cameraSystem?.update?.(delta)
+subSteps++
 
-this.sceneManager?.update?.(delta,this.time)
+}
 
-const fps=this.performanceMonitor?.update?.(delta)
+this.alpha=this.accumulator/this.fixedDelta
 
-this.performanceScaler?.update?.(fps,delta)
+this._update(delta)
+this._lateUpdate(delta)
 
-this.memoryMonitor?.update?.(delta)
+const fps=this.performanceMonitor?this._safeCall(this.performanceMonitor,'update',delta):0
+
+this.performanceScaler&&this._safeCall(this.performanceScaler,'update',fps,delta)
+
+this.memoryMonitor&&this._safeCall(this.memoryMonitor,'update',delta)
 
 this._emit('frame:update',delta)
 
-this._render(delta)
+this._render(delta,this.alpha)
 
 this._emit('frame:end',delta)
 
 }
 
-_render(){
+_fixedUpdate(delta){
+
+this.scheduler&&this._safeCall(this.scheduler,'fixedUpdate',delta)
+this.systemManager&&this._safeCall(this.systemManager,'fixedUpdate',delta)
+
+}
+
+_update(delta){
+
+this.scheduler&&this._safeCall(this.scheduler,'update',delta)
+this.systemManager&&this._safeCall(this.systemManager,'update',delta)
+this.environmentSystem&&this._safeCall(this.environmentSystem,'update',delta)
+this.cameraSystem&&this._safeCall(this.cameraSystem,'update',delta)
+this.sceneManager&&this._safeCall(this.sceneManager,'update',delta,this.time)
+
+}
+
+_lateUpdate(delta){
+
+this.systemManager&&this._safeCall(this.systemManager,'lateUpdate',delta)
+
+}
+
+_render(delta,alpha){
 
 const renderer=this.renderer
 const scene=this.sceneManager?.getScene?.()
@@ -323,11 +364,37 @@ if(!renderer||!scene||!camera)return
 
 if(this.pipeline?.render){
 
-this.pipeline.render(renderer,scene,camera,this.delta)
+this._safeCall(this.pipeline,'render',renderer,scene,camera,delta,alpha)
 
 }else{
 
-renderer.render(scene,camera)
+this._safeCall(renderer,'render',scene,camera)
+
+}
+
+}
+
+_safeCall(obj,method,...args){
+
+if(!obj)return
+
+if(this._disabledSystems.has(obj))return
+
+const fn=obj?.[method]
+
+if(!fn)return
+
+try{
+return fn.apply(obj,args)
+}catch(e){
+
+this._disabledSystems.add(obj)
+
+if(this.debug){
+console.warn('[ENGINE SYSTEM DISABLED]',obj,e)
+}
+
+this._emit('system:error',{system:obj,error:e})
 
 }
 
@@ -531,6 +598,8 @@ getScale(){return this.performanceScaler?.getScale?.()??1}
 getTime(){return this.time}
 getFrame(){return this.frame}
 getState(){return this.state}
+getTimeScale(){return this.timeScale}
+getInterpolationAlpha(){return this.alpha}
 isRunning(){return this.running}
 isPaused(){return this.paused}
 isInitialized(){return this.initialized}
