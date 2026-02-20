@@ -1,150 +1,67 @@
 import {EventEmitter} from '../utils/EventEmitter.js'
-import {StateMachine} from '../utils/StateMachine.js'
 
 export const AppPhase=Object.freeze({
 CREATED:0,
-BOOTSTRAPPING:1,
-BOOTSTRAPPED:2,
-INITIALIZING:3,
-INITIALIZED:4,
-STARTING:5,
-RUNNING:6,
-PAUSED:7,
-RESUMING:8,
-STOPPING:9,
-STOPPED:10,
-SHUTTING_DOWN:11,
-SHUTDOWN:12,
-ERROR:13,
-DESTROYED:14
+INITIALIZING:1,
+INITIALIZED:2,
+STARTING:3,
+RUNNING:4,
+PAUSING:5,
+PAUSED:6,
+RESUMING:7,
+STOPPING:8,
+STOPPED:9,
+DESTROYING:10,
+DESTROYED:11,
+ERROR:12
 })
 
 export class AppState extends EventEmitter{
 
-constructor(app){
+constructor(){
 
 super()
 
-this.app=app
-
 this.phase=AppPhase.CREATED
 this.previousPhase=null
-
-this.frame=0
-this.time=0
-this.delta=0
 
 this.running=false
 this.paused=false
 this.initialized=false
 this.destroyed=false
-this.bootstrapped=false
 
-this.visibility=true
-this.focus=true
+this.frame=0
+this.time=0
+this.delta=0
+
+this.startTime=0
+this.pauseTime=0
+this.resumeTime=0
+this.stopTime=0
+
+this.flags={
+ready:false,
+visible:true,
+focused:true,
+background:false
+}
 
 this.metrics={
 fps:0,
 frameTime:0,
-memory:0,
-cpu:0,
-gpu:0
+cpuTime:0,
+gpuTime:0,
+memory:0
 }
 
-this._machine=new StateMachine({context:this})
+this._fpsAccumulator=0
+this._fpsFrames=0
 
-this._configureStateMachine()
-
-}
-
-_configureStateMachine(){
-
-this._machine.addState('created',{
-onEnter:()=>this._setPhase(AppPhase.CREATED)
-})
-
-this._machine.addState('bootstrapping',{
-onEnter:()=>this._setPhase(AppPhase.BOOTSTRAPPING)
-})
-
-this._machine.addState('bootstrapped',{
-onEnter:()=>{
-this.bootstrapped=true
-this._setPhase(AppPhase.BOOTSTRAPPED)
-}
-})
-
-this._machine.addState('initializing',{
-onEnter:()=>this._setPhase(AppPhase.INITIALIZING)
-})
-
-this._machine.addState('initialized',{
-onEnter:()=>{
-this.initialized=true
-this._setPhase(AppPhase.INITIALIZED)
-}
-})
-
-this._machine.addState('starting',{
-onEnter:()=>this._setPhase(AppPhase.STARTING)
-})
-
-this._machine.addState('running',{
-onEnter:()=>{
-this.running=true
-this.paused=false
-this._setPhase(AppPhase.RUNNING)
-}
-})
-
-this._machine.addState('paused',{
-onEnter:()=>{
-this.paused=true
-this.running=false
-this._setPhase(AppPhase.PAUSED)
-}
-})
-
-this._machine.addState('resuming',{
-onEnter:()=>this._setPhase(AppPhase.RESUMING)
-})
-
-this._machine.addState('stopping',{
-onEnter:()=>this._setPhase(AppPhase.STOPPING)
-})
-
-this._machine.addState('stopped',{
-onEnter:()=>{
-this.running=false
-this._setPhase(AppPhase.STOPPED)
-}
-})
-
-this._machine.addState('shutting_down',{
-onEnter:()=>this._setPhase(AppPhase.SHUTTING_DOWN)
-})
-
-this._machine.addState('shutdown',{
-onEnter:()=>this._setPhase(AppPhase.SHUTDOWN)
-})
-
-this._machine.addState('error',{
-onEnter:()=>this._setPhase(AppPhase.ERROR)
-})
-
-this._machine.addState('destroyed',{
-onEnter:()=>{
-this.destroyed=true
-this.running=false
-this._setPhase(AppPhase.DESTROYED)
-}
-})
-
-this._machine.setState('created')
+this.error=null
 
 }
 
-_setPhase(newPhase){
+setPhase(newPhase){
 
 if(this.phase===newPhase)return
 
@@ -152,105 +69,189 @@ this.previousPhase=this.phase
 this.phase=newPhase
 
 this.emit('phase',newPhase,this.previousPhase)
+this.emit(`phase:${newPhase}`,newPhase,this.previousPhase)
 
 }
 
-bootstrap(){
+markInitializing(){
 
-this._machine.setState('bootstrapping')
-this._machine.setState('bootstrapped')
-
-}
-
-initialize(){
-
-this._machine.setState('initializing')
-this._machine.setState('initialized')
+this.setPhase(AppPhase.INITIALIZING)
 
 }
 
-start(){
+markInitialized(){
 
-this._machine.setState('starting')
-this._machine.setState('running')
-
-}
-
-pause(){
-
-if(this.paused)return
-this._machine.setState('paused')
+this.initialized=true
+this.setPhase(AppPhase.INITIALIZED)
 
 }
 
-resume(){
+markStarting(){
 
-this._machine.setState('resuming')
-this._machine.setState('running')
-
-}
-
-stop(){
-
-this._machine.setState('stopping')
-this._machine.setState('stopped')
+this.setPhase(AppPhase.STARTING)
 
 }
 
-shutdown(){
+markRunning(){
 
-this._machine.setState('shutting_down')
-this._machine.setState('shutdown')
+this.running=true
+this.paused=false
 
-}
+this.startTime=performance.now()
 
-destroy(){
+this.setPhase(AppPhase.RUNNING)
 
-this._machine.setState('destroyed')
-this.removeAllListeners()
-this.app=null
+this.emit('running')
 
 }
 
-error(err){
+markPausing(){
 
-this.lastError=err
-this.emit('error',err)
-this._machine.setState('error')
+this.setPhase(AppPhase.PAUSING)
 
 }
 
-step(delta,time){
+markPaused(){
 
-this.delta=delta
+this.running=false
+this.paused=true
+
+this.pauseTime=performance.now()
+
+this.setPhase(AppPhase.PAUSED)
+
+this.emit('paused')
+
+}
+
+markResuming(){
+
+this.setPhase(AppPhase.RESUMING)
+
+}
+
+markResumed(){
+
+this.running=true
+this.paused=false
+
+this.resumeTime=performance.now()
+
+this.setPhase(AppPhase.RUNNING)
+
+this.emit('resumed')
+
+}
+
+markStopping(){
+
+this.setPhase(AppPhase.STOPPING)
+
+}
+
+markStopped(){
+
+this.running=false
+
+this.stopTime=performance.now()
+
+this.setPhase(AppPhase.STOPPED)
+
+this.emit('stopped')
+
+}
+
+markDestroying(){
+
+this.setPhase(AppPhase.DESTROYING)
+
+}
+
+markDestroyed(){
+
+this.destroyed=true
+this.running=false
+
+this.setPhase(AppPhase.DESTROYED)
+
+this.emit('destroyed')
+
+}
+
+markError(error){
+
+this.error=error
+
+this.setPhase(AppPhase.ERROR)
+
+this.emit('error',error)
+
+}
+
+step(dt,time){
+
+if(!this.running)return
+
+this.delta=dt
 this.time=time
+
 this.frame++
 
-this.metrics.frameTime=delta
+this.metrics.frameTime=dt
 
-this.emit('step',delta,time,this.frame)
+this.updateFPS(dt)
 
-}
-
-setVisibility(visible){
-
-this.visibility=visible
-
-this.emit('visibility',visible)
+this.emit('step',dt,time,this.frame)
 
 }
 
-setFocus(focus){
+updateFPS(dt){
 
-this.focus=focus
+this._fpsAccumulator+=dt
+this._fpsFrames++
 
-this.emit('focus',focus)
+if(this._fpsAccumulator>=0.5){
+
+this.metrics.fps=this._fpsFrames/this._fpsAccumulator
+
+this._fpsAccumulator=0
+this._fpsFrames=0
+
+this.emit('fps',this.metrics.fps)
 
 }
 
-setFPS(fps){
+}
 
-this.metrics.fps=fps
+setVisible(visible){
+
+this.flags.visible=visible
+
+this.emit('visible',visible)
+
+}
+
+setFocused(focused){
+
+this.flags.focused=focused
+
+this.emit('focused',focused)
+
+}
+
+setReady(ready=true){
+
+this.flags.ready=ready
+
+this.emit('ready',ready)
+
+}
+
+setBackground(background){
+
+this.flags.background=background
+
+this.emit('background',background)
 
 }
 
@@ -258,17 +259,39 @@ setMemory(bytes){
 
 this.metrics.memory=bytes
 
-}
-
-setCPU(ms){
-
-this.metrics.cpu=ms
+this.emit('memory',bytes)
 
 }
 
-setGPU(ms){
+setCPUTime(ms){
 
-this.metrics.gpu=ms
+this.metrics.cpuTime=ms
+
+this.emit('cpu',ms)
+
+}
+
+setGPUTime(ms){
+
+this.metrics.gpuTime=ms
+
+this.emit('gpu',ms)
+
+}
+
+reset(){
+
+this.frame=0
+this.time=0
+this.delta=0
+
+this.metrics.fps=0
+this.metrics.frameTime=0
+
+this._fpsAccumulator=0
+this._fpsFrames=0
+
+this.emit('reset')
 
 }
 
@@ -296,26 +319,15 @@ return this.destroyed
 
 }
 
-getPhase(){
+destroy(){
 
-return this.phase
+if(this.destroyed)return
 
-}
+this.markDestroying()
 
-getMetrics(){
+this.removeAllListeners()
 
-return this.metrics
-
-}
-
-reset(){
-
-this.frame=0
-this.time=0
-this.delta=0
-
-this.metrics.fps=0
-this.metrics.frameTime=0
+this.markDestroyed()
 
 }
 
