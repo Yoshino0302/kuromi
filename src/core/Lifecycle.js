@@ -1,0 +1,134 @@
+import {EventEmitter} from '../utils/EventEmitter.js'
+export const LifecyclePhase=Object.freeze({
+IDLE:0,
+STARTING:1,
+RUNNING:2,
+PAUSED:3,
+STOPPED:4,
+DESTROYED:5
+})
+export class Lifecycle extends EventEmitter{
+constructor(){
+super()
+this.phase=LifecyclePhase.IDLE
+this.running=false
+this.paused=false
+this.destroyed=false
+this._rafId=0
+this._lastTime=0
+this._delta=0
+this._time=0
+this._frame=0
+this._maxDelta=0.25
+this._timeScale=1
+this._boundLoop=this._loop.bind(this)
+this._boundVisibility=this._handleVisibility.bind(this)
+this._boundFocus=this._handleFocus.bind(this)
+this._boundBlur=this._handleBlur.bind(this)
+this._setupBrowserEvents()
+}
+_setupBrowserEvents(){
+document.addEventListener('visibilitychange',this._boundVisibility,{passive:true})
+window.addEventListener('focus',this._boundFocus,{passive:true})
+window.addEventListener('blur',this._boundBlur,{passive:true})
+}
+removeBrowserEvents(){
+document.removeEventListener('visibilitychange',this._boundVisibility)
+window.removeEventListener('focus',this._boundFocus)
+window.removeEventListener('blur',this._boundBlur)
+}
+start(){
+if(this.running)return
+this.running=true
+this.paused=false
+this.destroyed=false
+this.phase=LifecyclePhase.STARTING
+this._lastTime=performance.now()
+this.emit('start')
+this.phase=LifecyclePhase.RUNNING
+this.emit('resume')
+this._rafId=requestAnimationFrame(this._boundLoop)
+}
+_loop(now){
+if(!this.running)return
+let delta=(now-this._lastTime)/1000
+this._lastTime=now
+if(delta>this._maxDelta)delta=this._maxDelta
+delta*=this._timeScale
+this._delta=delta
+this._time+=delta
+this._frame++
+this.emit('update',delta,this._time,this._frame)
+this._rafId=requestAnimationFrame(this._boundLoop)
+}
+pause(){
+if(!this.running||this.paused)return
+this.paused=true
+this.running=false
+this.phase=LifecyclePhase.PAUSED
+cancelAnimationFrame(this._rafId)
+this.emit('pause')
+}
+resume(){
+if(this.running||this.destroyed)return
+this.running=true
+this.paused=false
+this.phase=LifecyclePhase.RUNNING
+this._lastTime=performance.now()
+this.emit('resume')
+this._rafId=requestAnimationFrame(this._boundLoop)
+}
+stop(){
+if(this.destroyed)return
+this.running=false
+this.paused=false
+this.phase=LifecyclePhase.STOPPED
+cancelAnimationFrame(this._rafId)
+this.emit('stop')
+}
+destroy(){
+if(this.destroyed)return
+this.stop()
+this.destroyed=true
+this.phase=LifecyclePhase.DESTROYED
+this.removeBrowserEvents()
+this.removeAllListeners()
+}
+_handleVisibility(){
+if(document.hidden){
+this.emit('hidden')
+this.pause()
+}else{
+this.emit('visible')
+this.resume()
+}
+}
+_handleFocus(){
+this.emit('focus')
+}
+_handleBlur(){
+this.emit('blur')
+}
+setTimeScale(scale){
+this._timeScale=Math.max(0,scale)
+this.emit('timescale',this._timeScale)
+}
+setMaxDelta(dt){
+this._maxDelta=dt
+}
+get delta(){
+return this._delta
+}
+get time(){
+return this._time
+}
+get frame(){
+return this._frame
+}
+isRunning(){
+return this.running
+}
+isPaused(){
+return this.paused
+}
+}
