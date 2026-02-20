@@ -1,213 +1,233 @@
 import {Engine} from '../core/Engine.js'
+import {EngineState} from '../core/EngineState.js'
+import {createEngineConfig} from '../config/EngineConfig.js'
+import {App} from './App.js'
 import {AppState} from './AppState.js'
-import {Lifecycle} from '../core/Lifecycle.js'
+import {EventEmitter} from '../utils/EventEmitter.js'
 
-export class AppBootstrap{
+export class AppBootstrap extends EventEmitter{
 
 constructor(options={}){
+
+super()
 
 this.options=options
 
 this.engine=null
-this.state=null
-this.lifecycle=null
+this.engineState=null
 
-this.container=options.container||document.body
-this.canvas=options.canvas||null
+this.app=null
+this.appState=null
 
-this.autoStart=options.autoStart!==false
+this.config=null
 
-this._bootPromise=null
-this._started=false
-this._destroyed=false
+this.initialized=false
+this.started=false
+this.destroyed=false
 
-this._boundVisibility=this._handleVisibility.bind(this)
-this._boundFocus=this._handleFocus.bind(this)
-this._boundBlur=this._handleBlur.bind(this)
+this.container=null
+this.canvas=null
 
 }
 
-async boot(){
+async initialize(options={}){
 
-if(this._bootPromise)return this._bootPromise
+if(this.initialized||this.destroyed)return
 
-this._bootPromise=this._boot()
+this.config=createEngineConfig(options.engine||{})
 
-return this._bootPromise
+this.resolveContainer(options.container)
 
-}
+this.resolveCanvas(options.canvas)
 
-async _boot(){
+this.engineState=new EngineState()
 
-if(this._destroyed)throw new Error('AppBootstrap destroyed')
+this.appState=new AppState()
 
-this.state=new AppState(this)
+this.engine=new Engine(this.config,this.engineState)
 
-this.state.bootstrap()
+this.app=new App(this.engine,this.appState,options.app||{})
 
-this.engine=new Engine({
+await this.engine.initialize({
 container:this.container,
-canvas:this.canvas,
-...this.options.engine
+canvas:this.canvas
 })
 
-this.lifecycle=new Lifecycle(this.engine)
+await this.app.initialize()
 
-this._installDOMHooks()
+this.bindEvents()
 
-this.state.initialize()
+this.initialized=true
 
-await this.engine.init()
-
-this.lifecycle.register('engine',this.engine,{
-priority:0,
-autoInit:false,
-autoStart:false
-})
-
-this.state.start()
-
-if(this.autoStart){
-
-await this.start()
-
-}
+this.emit('initialized',this)
 
 return this
 
 }
 
+resolveContainer(container){
+
+if(typeof container==='string'){
+
+this.container=document.querySelector(container)
+
+}else if(container instanceof HTMLElement){
+
+this.container=container
+
+}else{
+
+this.container=document.body
+
+}
+
+}
+
+resolveCanvas(canvas){
+
+if(typeof canvas==='string'){
+
+this.canvas=document.querySelector(canvas)
+
+}else if(canvas instanceof HTMLCanvasElement){
+
+this.canvas=canvas
+
+}else{
+
+this.canvas=document.createElement('canvas')
+
+this.container.appendChild(this.canvas)
+
+}
+
+}
+
+bindEvents(){
+
+this.engine.on('start',()=>{
+
+this.emit('engine:start')
+
+})
+
+this.engine.on('stop',()=>{
+
+this.emit('engine:stop')
+
+})
+
+this.app.on('started',()=>{
+
+this.emit('app:started')
+
+})
+
+this.app.on('stopped',()=>{
+
+this.emit('app:stopped')
+
+})
+
+}
+
 async start(){
 
-if(this._started)return
+if(this.started||this.destroyed)return
 
-this._started=true
+if(!this.initialized){
+
+await this.initialize(this.options)
+
+}
 
 await this.engine.start()
 
-this.state.start()
+await this.app.start()
+
+this.started=true
+
+this.emit('started',this)
 
 }
 
 pause(){
 
-if(!this.engine)return
+if(this.destroyed)return
 
 this.engine.pause()
 
-this.state.pause()
+this.app.pause()
+
+this.emit('paused',this)
 
 }
 
 resume(){
 
-if(!this.engine)return
+if(this.destroyed)return
 
 this.engine.resume()
 
-this.state.resume()
+this.app.resume()
+
+this.emit('resumed',this)
 
 }
 
 stop(){
 
-if(!this.engine)return
+if(!this.started||this.destroyed)return
+
+this.app.stop()
 
 this.engine.stop()
 
-this.state.stop()
+this.started=false
+
+this.emit('stopped',this)
 
 }
 
-async shutdown(){
+destroy(){
 
-if(this._destroyed)return
+if(this.destroyed)return
 
-this.state.shutdown()
+this.stop()
 
-await this.lifecycle.dispose()
+this.app?.destroy()
 
-await this.engine.shutdown()
+this.engine?.destroy()
 
-this._removeDOMHooks()
-
-this.state.destroy()
+this.removeCanvas()
 
 this.engine=null
-this.lifecycle=null
+this.app=null
+this.engineState=null
+this.appState=null
 
-this._destroyed=true
+this.initialized=false
+this.started=false
+this.destroyed=true
 
-}
+this.emit('destroyed',this)
 
-_handleVisibility(){
-
-const visible=document.visibilityState==='visible'
-
-this.state.setVisibility(visible)
-
-if(!visible){
-
-this.pause()
-
-}else{
-
-this.resume()
+this.removeAllListeners()
 
 }
 
-}
+removeCanvas(){
 
-_handleFocus(){
+if(
+this.canvas&&
+this.canvas.parentNode
+){
 
-this.state.setFocus(true)
-
-}
-
-_handleBlur(){
-
-this.state.setFocus(false)
+this.canvas.parentNode.removeChild(this.canvas)
 
 }
 
-_installDOMHooks(){
-
-document.addEventListener(
-'visibilitychange',
-this._boundVisibility,
-{passive:true}
-)
-
-window.addEventListener(
-'focus',
-this._boundFocus,
-{passive:true}
-)
-
-window.addEventListener(
-'blur',
-this._boundBlur,
-{passive:true}
-)
-
-}
-
-_removeDOMHooks(){
-
-document.removeEventListener(
-'visibilitychange',
-this._boundVisibility
-)
-
-window.removeEventListener(
-'focus',
-this._boundFocus
-)
-
-window.removeEventListener(
-'blur',
-this._boundBlur
-)
+this.canvas=null
 
 }
 
@@ -217,27 +237,33 @@ return this.engine
 
 }
 
-getState(){
+getApp(){
 
-return this.state
-
-}
-
-getLifecycle(){
-
-return this.lifecycle
+return this.app
 
 }
 
-isRunning(){
+getConfig(){
 
-return this.state?.isRunning?.()??false
+return this.config
+
+}
+
+isInitialized(){
+
+return this.initialized
+
+}
+
+isStarted(){
+
+return this.started
 
 }
 
 isDestroyed(){
 
-return this._destroyed
+return this.destroyed
 
 }
 
