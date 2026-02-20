@@ -9,11 +9,12 @@ export class PerformanceScaler{
 constructor(renderer,options={}){
 
 this.renderer=renderer
+this.pipeline=null
+this.onScaleChange=null
 
 this.options=options
 
 this.state=SCALER_STATE.ACTIVE
-
 this.enabled=true
 
 this.targetFPS=options.targetFPS||60
@@ -32,40 +33,57 @@ this.requiredStableFrames=options.requiredStableFrames||45
 this.currentScale=1
 this.targetScale=1
 
-this.pixelRatioBase=Math.min(
-window.devicePixelRatio||1,
-options.maxPixelRatio||2
-)
-
+this.pixelRatioBase=1
 this.pixelRatioApplied=-1
 
 this.stableFrames=0
-
 this.lastFPS=this.targetFPS
 
 this.trend=0
-
 this.spikeDetected=false
 
 this._lastScaleChangeTime=0
-
 this.scaleChangeCooldown=options.scaleChangeCooldown||0.25
 
 this.time=0
 
+this.width=1
+this.height=1
+
+this.setBasePixelRatio()
+
 }
 
-update(currentFPS,delta=0){
+attachPipeline(pipeline){
+
+this.pipeline=pipeline
+
+}
+
+setSize(width,height){
+
+this.width=width
+this.height=height
+
+}
+
+setBasePixelRatio(){
+
+this.pixelRatioBase=Math.min(
+window.devicePixelRatio||1,
+this.options.maxPixelRatio||2
+)
+
+}
+
+update(currentFPS,delta=0.016){
 
 if(!this.enabled)return
-
 if(this.state!==SCALER_STATE.ACTIVE)return
-
 if(!this.renderer)return
-
 if(currentFPS<=0)return
 
-this.time+=delta||0.016
+this.time+=delta
 
 this.trend=currentFPS-this.lastFPS
 
@@ -77,7 +95,7 @@ this._computeTargetScale(currentFPS)
 
 this._applyCooldown()
 
-this._smoothScale()
+this._smoothScale(delta)
 
 this._applyScale()
 
@@ -88,9 +106,7 @@ _computeTargetScale(fps){
 if(this.spikeDetected){
 
 this.targetScale=this.minScale
-
 this.stableFrames=0
-
 return
 
 }
@@ -98,9 +114,7 @@ return
 if(fps<this.minFPS){
 
 this.targetScale=this.minScale
-
 this.stableFrames=0
-
 return
 
 }
@@ -109,7 +123,8 @@ if(fps<this.targetFPS-this.hysteresis){
 
 const deficit=(this.targetFPS-fps)/this.targetFPS
 
-const adaptiveFactor=0.6+Math.min(Math.abs(this.trend)*0.01,0.2)
+const adaptiveFactor=
+0.6+Math.min(Math.abs(this.trend)*0.01,0.2)
 
 const scale=1-deficit*adaptiveFactor
 
@@ -120,7 +135,6 @@ this.maxScale
 )
 
 this.stableFrames=0
-
 return
 
 }
@@ -143,14 +157,9 @@ _applyCooldown(){
 
 const now=this.time
 
-if(
-Math.abs(this.targetScale-this.currentScale)>0.01
-){
+if(Math.abs(this.targetScale-this.currentScale)>0.01){
 
-if(
-now-this._lastScaleChangeTime<
-this.scaleChangeCooldown
-){
+if(now-this._lastScaleChangeTime<this.scaleChangeCooldown){
 
 this.targetScale=this.currentScale
 
@@ -164,50 +173,55 @@ this._lastScaleChangeTime=now
 
 }
 
-_smoothScale(){
+_smoothScale(delta){
+
+const up=this.upscaleSpeed*delta*60
+const down=this.downscaleSpeed*delta*60
 
 if(this.currentScale>this.targetScale){
 
-this.currentScale-=this.downscaleSpeed
-
-if(this.currentScale<this.targetScale){
-
-this.currentScale=this.targetScale
-
-}
+this.currentScale-=down
 
 }else if(this.currentScale<this.targetScale){
 
-this.currentScale+=this.upscaleSpeed
-
-if(this.currentScale>this.targetScale){
-
-this.currentScale=this.targetScale
+this.currentScale+=up
 
 }
 
-}
+this.currentScale=this._clamp(
+this.currentScale,
+this.minScale,
+this.maxScale
+)
 
 }
 
 _applyScale(){
 
-if(!this.renderer?.setPixelRatio)return
-
 const finalPixelRatio=
 this.pixelRatioBase*this.currentScale
 
-if(
-Math.abs(
-finalPixelRatio-this.pixelRatioApplied
-)<0.01
-)return
+if(Math.abs(finalPixelRatio-this.pixelRatioApplied)<0.01)return
 
-this.renderer.setPixelRatio(
+this.renderer.setPixelRatio(finalPixelRatio)
+
+if(this.pipeline){
+
+this.pipeline.setSize(
+this.width,
+this.height,
 finalPixelRatio
 )
 
+}
+
 this.pixelRatioApplied=finalPixelRatio
+
+if(this.onScaleChange){
+
+this.onScaleChange(this.currentScale,finalPixelRatio)
+
+}
 
 }
 
@@ -224,24 +238,6 @@ this.enabled=enabled
 this.state=enabled
 ?SCALER_STATE.ACTIVE
 :SCALER_STATE.DISABLED
-
-}
-
-setTargetFPS(fps){
-
-this.targetFPS=fps
-
-}
-
-setMinScale(scale){
-
-this.minScale=scale
-
-}
-
-setMaxScale(scale){
-
-this.maxScale=scale
 
 }
 
@@ -269,24 +265,6 @@ return'very_low'
 
 }
 
-isStable(){
-
-return this.stableFrames>=this.requiredStableFrames
-
-}
-
-isThrottling(){
-
-return this.currentScale<0.99
-
-}
-
-isRecovering(){
-
-return this.currentScale<this.targetScale
-
-}
-
 reset(){
 
 this.currentScale=1
@@ -301,10 +279,9 @@ this._applyScale()
 dispose(){
 
 this.enabled=false
-
 this.state=SCALER_STATE.DISPOSED
-
 this.renderer=null
+this.pipeline=null
 
 }
 
