@@ -10,16 +10,17 @@ CONSTRUCTED:0,
 INITIALIZING:1,
 INITIALIZED:2,
 RUNNING:3,
-STOPPED:4,
-SHUTTING_DOWN:5,
-DESTROYED:6
+PAUSED:4,
+STOPPED:5,
+SHUTTING_DOWN:6,
+DESTROYED:7
 }
 
 export class Engine{
 
 constructor(options={}){
 
-this.options=options
+this.options=options||{}
 this.debug=options.debug===true
 this.config=options.config||{}
 
@@ -28,6 +29,7 @@ this.state=ENGINE_STATE.CONSTRUCTED
 this.running=false
 this.initialized=false
 this.destroyed=false
+this.paused=false
 
 this.clock=new THREE.Clock(false)
 
@@ -52,13 +54,13 @@ this._shutdownPromise=null
 
 this._listeners=new Map()
 
+this._resizeObserver=null
+
 this._boundTick=this._tick.bind(this)
 this._boundResize=this._handleResize.bind(this)
 this._boundVisibility=this._handleVisibility.bind(this)
 
-this._resizeObserver=null
-
-this._lastFrameTime=0
+this._lastNow=0
 
 }
 
@@ -73,19 +75,26 @@ this.state=ENGINE_STATE.INITIALIZING
 
 this._emit('init:start')
 
-this.renderer=new Renderer(this.options)
+this.renderer=new Renderer({
+...this.options,
+engine:this
+})
 
-this.cameraSystem=new CameraSystem(this.options)
+this.cameraSystem=new CameraSystem({
+...this.options,
+engine:this
+})
 
 this.sceneManager=new SceneManager({
-renderer:this.renderer,
-camera:this.cameraSystem.getCamera(),
-options:this.options
+...this.options,
+engine:this
 })
+
+await this.sceneManager.init()
 
 this.performanceMonitor=new PerformanceMonitor({
 targetFPS:60,
-sampleInterval:0.5
+sampleInterval:0.25
 })
 
 const rawRenderer=this.renderer.getRenderer?.()
@@ -96,7 +105,9 @@ this.performanceScaler=new PerformanceScaler(
 rawRenderer,
 {
 targetFPS:60,
-minFPS:30
+minFPS:30,
+maxScale:1,
+minScale:0.5
 }
 )
 
@@ -132,15 +143,47 @@ await this.init()
 }
 
 this.running=true
-this.state=ENGINE_STATE.RUNNING
+this.paused=false
 
 this.clock.start()
 
-this._lastFrameTime=performance.now()
+this._lastNow=performance.now()
+
+this.state=ENGINE_STATE.RUNNING
 
 this._emit('start')
 
 this._startLoop()
+
+}
+
+pause(){
+
+if(!this.running)return
+if(this.paused)return
+
+this.paused=true
+
+this.clock.stop()
+
+this.state=ENGINE_STATE.PAUSED
+
+this._emit('pause')
+
+}
+
+resume(){
+
+if(!this.running)return
+if(!this.paused)return
+
+this.paused=false
+
+this.clock.start()
+
+this.state=ENGINE_STATE.RUNNING
+
+this._emit('resume')
 
 }
 
@@ -150,7 +193,7 @@ if(this._loopActive)return
 
 this._loopActive=true
 
-const loop=(time)=>{
+const loop=(now)=>{
 
 if(!this.running){
 
@@ -161,7 +204,9 @@ return
 
 this._rafId=requestAnimationFrame(loop)
 
-this._tick(time)
+if(this.paused)return
+
+this._tick(now)
 
 }
 
@@ -185,7 +230,9 @@ this._loopActive=false
 
 _tick(now){
 
-let delta=this.clock.getDelta()
+let delta=(now-this._lastNow)*0.001
+
+this._lastNow=now
 
 if(!Number.isFinite(delta))delta=0
 
@@ -198,11 +245,11 @@ this.frame++
 
 this._emit('frame:start',delta)
 
-this.update(delta)
+this._update(delta)
 
 this._emit('frame:update',delta)
 
-this.render(delta)
+this._render(delta)
 
 this._emit('frame:render',delta)
 
@@ -210,37 +257,28 @@ this._emit('frame:end',delta)
 
 }
 
-update(delta){
+_update(delta){
 
-if(this.cameraSystem?.update){
+this.cameraSystem?.update?.(delta)
 
-this.cameraSystem.update(delta)
-
-}
-
-if(this.sceneManager?.update){
-
-this.sceneManager.update(delta)
-
-}
+this.sceneManager?.update?.(
+delta,
+this.time
+)
 
 if(this.performanceMonitor){
 
 const fps=this.performanceMonitor.update(delta)
 
-if(this.performanceScaler){
-
-this.performanceScaler.update(fps)
+this.performanceScaler?.update?.(fps)
 
 }
 
 }
 
-}
+_render(){
 
-render(){
-
-const renderer=this.renderer?.getRenderer?.()
+const renderer=this.renderer
 const scene=this.sceneManager?.getScene?.()
 const camera=this.cameraSystem?.getCamera?.()
 
@@ -255,6 +293,7 @@ stop(){
 if(!this.running)return
 
 this.running=false
+this.paused=false
 
 this.clock.stop()
 
@@ -282,17 +321,17 @@ this.stop()
 this._removeResize()
 this._removeVisibility()
 
-await this._dispose(this.performanceScaler)
-await this._dispose(this.performanceMonitor)
 await this._dispose(this.sceneManager)
 await this._dispose(this.cameraSystem)
 await this._dispose(this.renderer)
+await this._dispose(this.performanceScaler)
+await this._dispose(this.performanceMonitor)
 
-this.performanceScaler=null
-this.performanceMonitor=null
 this.sceneManager=null
 this.cameraSystem=null
 this.renderer=null
+this.performanceScaler=null
+this.performanceMonitor=null
 
 this.initialized=false
 this.destroyed=true
@@ -325,17 +364,7 @@ if(!system)return
 
 try{
 
-if(system.shutdown){
-
-await system.shutdown()
-
-}
-
-if(system.dispose){
-
-system.dispose()
-
-}
+system?.dispose?.()
 
 }catch(e){
 
@@ -351,11 +380,7 @@ console.warn('[ENGINE DISPOSE ERROR]',e)
 
 _handleResize(){
 
-if(this.renderer?.resize){
-
-this.renderer.resize()
-
-}
+this.renderer?.resize?.()
 
 this._emit('resize')
 
@@ -390,13 +415,9 @@ window.removeEventListener(
 this._boundResize
 )
 
-if(this._resizeObserver){
-
-this._resizeObserver.disconnect()
+this._resizeObserver?.disconnect?.()
 
 this._resizeObserver=null
-
-}
 
 }
 
@@ -404,15 +425,11 @@ _handleVisibility(){
 
 if(document.visibilityState==='hidden'){
 
-this.clock.stop()
+this.pause()
 
 }else{
 
-if(this.running){
-
-this.clock.start()
-
-}
+this.resume()
 
 }
 
@@ -453,11 +470,7 @@ const set=this._listeners.get(event)
 
 set.add(callback)
 
-return()=>{
-
-set.delete(callback)
-
-}
+return()=>set.delete(callback)
 
 }
 
@@ -517,9 +530,27 @@ return this.performanceScaler?.getScale?.()??1
 
 }
 
+getTime(){
+
+return this.time
+
+}
+
+getFrame(){
+
+return this.frame
+
+}
+
 isRunning(){
 
 return this.running
+
+}
+
+isPaused(){
+
+return this.paused
 
 }
 
