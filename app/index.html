@@ -1,0 +1,114 @@
+import {Engine} from '../core/Engine.js'
+import {EngineState} from '../core/EngineState.js'
+import {App} from './App.js'
+
+let engine=null
+let state=null
+let app=null
+
+let booted=false
+
+async function boot(options={}){
+
+if(booted)return app
+
+booted=true
+
+state=new EngineState()
+
+engine=new Engine({
+debug:options.debug??false,
+config:options.config??{}
+})
+
+await engine.init()
+
+app=new App(
+engine,
+state,
+options.app??{}
+)
+
+await app.initialize()
+
+_bindEngineToState(engine,state)
+
+await engine.start()
+
+await app.start()
+
+_exposeDebug()
+
+return app
+
+}
+
+function _bindEngineToState(engine,state){
+
+engine.on('init:start',()=>{
+state.setPhase?.(1)
+})
+
+engine.on('init:complete',()=>{
+state.markInitialized?.()
+})
+
+engine.on('start',()=>{
+state.markRunning?.()
+})
+
+engine.on('pause',()=>{
+state.markPaused?.()
+})
+
+engine.on('resume',()=>{
+state.markResumed?.()
+})
+
+engine.on('stop',()=>{
+state.markStopped?.()
+})
+
+engine.on('shutdown:complete',()=>{
+state.markDestroyed?.()
+})
+
+engine.on('frame:start',(dt)=>{
+
+state.delta=dt
+state.time=engine.getTime?.()??0
+state.frame=engine.getFrame?.()??0
+
+})
+
+}
+
+function _exposeDebug(){
+
+if(typeof window==='undefined')return
+
+window.__KUROMI__={
+engine,
+state,
+app,
+get renderer(){return engine?.getRenderer?.()},
+get scene(){return engine?.getScene?.()},
+get camera(){return engine?.getCamera?.()},
+get fps(){return engine?.getPerformance?.()?.fps},
+get scale(){return engine?.getScale?.()},
+pause(){engine?.pause?.()},
+resume(){engine?.resume?.()},
+restart(){engine?.restart?.()},
+shutdown(){engine?.shutdown?.()}
+}
+
+}
+
+export {
+
+boot,
+engine,
+state,
+app
+
+}
