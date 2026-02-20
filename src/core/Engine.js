@@ -35,8 +35,8 @@ this.delta=0
 this.time=0
 this.frame=0
 
-this.maxDelta=0.1
-this.minDelta=0.00001
+this.maxDelta=0.05
+this.minDelta=0.000001
 
 this.renderer=null
 this.sceneManager=null
@@ -44,8 +44,8 @@ this.cameraSystem=null
 this.performanceMonitor=null
 this.performanceScaler=null
 
-this._rafId=null
-this._loop=null
+this._rafId=0
+this._loopActive=false
 
 this._initPromise=null
 this._shutdownPromise=null
@@ -57,6 +57,8 @@ this._boundResize=this._handleResize.bind(this)
 this._boundVisibility=this._handleVisibility.bind(this)
 
 this._resizeObserver=null
+
+this._lastFrameTime=0
 
 }
 
@@ -81,7 +83,10 @@ camera:this.cameraSystem.getCamera(),
 options:this.options
 })
 
-this.performanceMonitor=new PerformanceMonitor(this.options)
+this.performanceMonitor=new PerformanceMonitor({
+targetFPS:60,
+sampleInterval:0.5
+})
 
 const rawRenderer=this.renderer.getRenderer?.()
 
@@ -89,7 +94,10 @@ if(rawRenderer){
 
 this.performanceScaler=new PerformanceScaler(
 rawRenderer,
-this.options
+{
+targetFPS:60,
+minFPS:30
+}
 )
 
 }
@@ -118,13 +126,17 @@ if(this.destroyed)return
 if(this.running)return
 
 if(!this.initialized){
+
 await this.init()
+
 }
 
 this.running=true
 this.state=ENGINE_STATE.RUNNING
 
 this.clock.start()
+
+this._lastFrameTime=performance.now()
 
 this._emit('start')
 
@@ -134,39 +146,48 @@ this._startLoop()
 
 _startLoop(){
 
-if(this._loop)return
+if(this._loopActive)return
 
-this._loop=(t)=>{
+this._loopActive=true
 
-if(!this.running)return
+const loop=(time)=>{
 
-this._rafId=requestAnimationFrame(this._loop)
+if(!this.running){
 
-this._boundTick()
+this._loopActive=false
+return
 
 }
 
-this._rafId=requestAnimationFrame(this._loop)
+this._rafId=requestAnimationFrame(loop)
+
+this._tick(time)
+
+}
+
+this._rafId=requestAnimationFrame(loop)
 
 }
 
 _stopLoop(){
 
-if(this._rafId!==null){
+if(this._rafId){
 
 cancelAnimationFrame(this._rafId)
 
-this._rafId=null
+this._rafId=0
 
 }
 
-this._loop=null
+this._loopActive=false
 
 }
 
-_tick(){
+_tick(now){
 
 let delta=this.clock.getDelta()
+
+if(!Number.isFinite(delta))delta=0
 
 if(delta>this.maxDelta)delta=this.maxDelta
 if(delta<this.minDelta)delta=this.minDelta
@@ -207,7 +228,7 @@ if(this.performanceMonitor){
 
 const fps=this.performanceMonitor.update(delta)
 
-if(this.performanceScaler?.update){
+if(this.performanceScaler){
 
 this.performanceScaler.update(fps)
 
@@ -219,14 +240,13 @@ this.performanceScaler.update(fps)
 
 render(){
 
-if(!this.renderer)return
-
+const renderer=this.renderer?.getRenderer?.()
 const scene=this.sceneManager?.getScene?.()
 const camera=this.cameraSystem?.getCamera?.()
 
-if(!scene||!camera)return
+if(!renderer||!scene||!camera)return
 
-this.renderer.render(scene,camera)
+renderer.render(scene,camera)
 
 }
 
@@ -303,6 +323,8 @@ async _dispose(system){
 
 if(!system)return
 
+try{
+
 if(system.shutdown){
 
 await system.shutdown()
@@ -315,13 +337,25 @@ system.dispose()
 
 }
 
+}catch(e){
+
+if(this.debug){
+
+console.warn('[ENGINE DISPOSE ERROR]',e)
+
+}
+
+}
+
 }
 
 _handleResize(){
 
-if(!this.renderer)return
+if(this.renderer?.resize){
 
-this.renderer.resize?.()
+this.renderer.resize()
+
+}
 
 this._emit('resize')
 
@@ -335,19 +369,15 @@ this._boundResize,
 {passive:true}
 )
 
-if(typeof ResizeObserver!=='undefined'){
-
 const canvas=this.renderer?.getCanvas?.()
 
-if(canvas){
+if(canvas&&typeof ResizeObserver!=='undefined'){
 
 this._resizeObserver=new ResizeObserver(
 this._boundResize
 )
 
 this._resizeObserver.observe(canvas)
-
-}
 
 }
 
@@ -447,10 +477,7 @@ cb(data)
 
 if(this.debug){
 
-console.warn(
-'[KUROMI ENGINE EVENT ERROR]',
-e
-)
+console.warn('[ENGINE EVENT ERROR]',e)
 
 }
 
@@ -475,6 +502,18 @@ return this.sceneManager?.getScene?.()
 getCamera(){
 
 return this.cameraSystem?.getCamera?.()
+
+}
+
+getPerformance(){
+
+return this.performanceMonitor?.getMetrics?.()
+
+}
+
+getScale(){
+
+return this.performanceScaler?.getScale?.()??1
 
 }
 
