@@ -8,8 +8,12 @@ constructor(options={}){
 this.options=options
 
 this.scene=options.scene||null
+
 this.colors=options.colors||ValentineColors
-this.count=options.count||2000
+
+this.count=options.count??2000
+
+this.boundingRadius=options.boundingRadius??20
 
 this.state='constructed'
 this.disposed=false
@@ -24,14 +28,16 @@ this.positions=null
 this.offsets=null
 this.scales=null
 
-this.boundingRadius=options.boundingRadius||12
+this.pixelRatio=Math.min(window.devicePixelRatio||1,2)
 
 this._createGeometry()
 this._createMaterial()
 this._createPoints()
 
 if(this.scene){
+
 this.scene.add(this.points)
+
 }
 
 this.state='initialized'
@@ -46,17 +52,19 @@ this.positions=new Float32Array(this.count*3)
 this.offsets=new Float32Array(this.count)
 this.scales=new Float32Array(this.count)
 
+const radius=this.boundingRadius
+
 for(let i=0;i<this.count;i++){
 
 const i3=i*3
 
-this.positions[i3+0]=(Math.random()-0.5)*10
-this.positions[i3+1]=(Math.random()-0.5)*6
-this.positions[i3+2]=(Math.random()-0.5)*10
+this.positions[i3+0]=(Math.random()-0.5)*radius
+this.positions[i3+1]=(Math.random()-0.5)*radius*0.6
+this.positions[i3+2]=(Math.random()-0.5)*radius
 
 this.offsets[i]=Math.random()*Math.PI*2
 
-this.scales[i]=Math.random()*1.5+0.5
+this.scales[i]=Math.random()*1.2+0.4
 
 }
 
@@ -75,7 +83,11 @@ this.geometry.setAttribute(
 new THREE.BufferAttribute(this.scales,1)
 )
 
-this.geometry.computeBoundingSphere()
+this.geometry.boundingSphere=
+new THREE.Sphere(
+new THREE.Vector3(0,0,0),
+radius*1.5
+)
 
 }
 
@@ -97,7 +109,7 @@ colorA:{value:new THREE.Color(this.colors.primary)},
 
 colorB:{value:new THREE.Color(this.colors.accent)},
 
-pixelRatio:{value:Math.min(window.devicePixelRatio||1,2)}
+pixelRatio:{value:this.pixelRatio}
 
 },
 
@@ -116,25 +128,29 @@ void main(){
 
 vec3 pos=position;
 
-float t=time*0.6+offset;
+float t=time+offset;
 
-pos.y+=sin(t*1.5)*0.5*scale;
-pos.x+=cos(t*0.9)*0.4*scale;
-pos.z+=sin(t*0.7)*0.4*scale;
+float waveY=sin(t*1.7)*0.45*scale;
+float waveX=cos(t*1.1)*0.35*scale;
+float waveZ=sin(t*0.9)*0.35*scale;
+
+pos.x+=waveX;
+pos.y+=waveY;
+pos.z+=waveZ;
 
 vMix=sin(t)*0.5+0.5;
 
 vec4 mvPosition=modelViewMatrix*vec4(pos,1.0);
 
-float dist=-mvPosition.z;
+float dist=max(-mvPosition.z,0.001);
 
-float size=scale*14.0*pixelRatio;
+float size=scale*16.0*pixelRatio;
 
 size*=clamp(300.0/dist,0.0,4.0);
 
 gl_PointSize=size;
 
-vAlpha=clamp(size/10.0,0.2,1.0);
+vAlpha=clamp(size/12.0,0.15,1.0);
 
 gl_Position=projectionMatrix*mvPosition;
 
@@ -153,11 +169,11 @@ void main(){
 
 vec2 uv=gl_PointCoord.xy-0.5;
 
-float d=length(uv);
+float d=dot(uv,uv);
 
-if(d>0.5)discard;
+if(d>0.25)discard;
 
-float alpha=1.0-smoothstep(0.0,0.5,d);
+float alpha=smoothstep(0.25,0.0,d);
 
 vec3 color=mix(colorA,colorB,vMix);
 
@@ -179,11 +195,14 @@ this.material
 
 this.points.frustumCulled=false
 
+this.points.matrixAutoUpdate=true
+
 }
 
 update(delta){
 
 if(this.disposed)return
+if(delta<=0)return
 
 this.time+=delta
 
@@ -197,15 +216,7 @@ if(this.disposed)return
 
 this.count=count
 
-this.dispose()
-
-this._createGeometry()
-this._createMaterial()
-this._createPoints()
-
-if(this.scene){
-this.scene.add(this.points)
-}
+this._rebuild()
 
 }
 
@@ -222,7 +233,32 @@ setPixelRatio(ratio){
 
 if(this.disposed)return
 
-this.material.uniforms.pixelRatio.value=ratio
+this.pixelRatio=Math.min(ratio,2)
+
+this.material.uniforms.pixelRatio.value=this.pixelRatio
+
+}
+
+_rebuild(){
+
+if(this.points&&this.scene){
+
+this.scene.remove(this.points)
+
+}
+
+if(this.geometry)this.geometry.dispose()
+if(this.material)this.material.dispose()
+
+this._createGeometry()
+this._createMaterial()
+this._createPoints()
+
+if(this.scene){
+
+this.scene.add(this.points)
+
+}
 
 }
 
@@ -239,16 +275,13 @@ if(this.disposed)return
 this.state='disposing'
 
 if(this.scene&&this.points){
+
 this.scene.remove(this.points)
+
 }
 
-if(this.geometry){
-this.geometry.dispose()
-}
-
-if(this.material){
-this.material.dispose()
-}
+if(this.geometry)this.geometry.dispose()
+if(this.material)this.material.dispose()
 
 this.points=null
 this.geometry=null
@@ -261,6 +294,7 @@ this.scales=null
 this.scene=null
 
 this.disposed=true
+
 this.state='disposed'
 
 }
