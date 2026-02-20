@@ -7,22 +7,31 @@ constructor(scene,camera,colors={},options={}){
 
 this.scene=scene
 this.camera=camera
+
 this.colors=colors||ValentineColors
 this.options=options
 
 this.state='constructed'
 this.disposed=false
 
-this.clock=new THREE.Clock()
+this.time=0
 
 this.lights=[]
 this.dynamicLights=[]
 
 this.ambientLight=null
-this.mainLight=null
+this.keyLight=null
 this.rimLight=null
+this.fillLight=null
 
 this.tmpVec=new THREE.Vector3()
+this.tmpVec2=new THREE.Vector3()
+
+this.baseIntensities=new Map()
+
+this.shadowMapSize=options.shadowMapSize??1024
+
+this.enableCameraTracking=options.enableCameraTracking??true
 
 this._create()
 
@@ -33,8 +42,9 @@ this.state='initialized'
 _create(){
 
 this._createAmbient()
-this._createMainLight()
+this._createKeyLight()
 this._createRimLight()
+this._createFillLight()
 
 }
 
@@ -51,23 +61,25 @@ this.lights.push(this.ambientLight)
 
 }
 
-_createMainLight(){
+_createKeyLight(){
 
-this.mainLight=new THREE.PointLight(
+this.keyLight=new THREE.PointLight(
 this.colors.glow,
-25,
-100,
+28,
+120,
 2
 )
 
-this.mainLight.position.set(0,0,5)
+this.keyLight.position.set(0,2,6)
 
-this._configureShadow(this.mainLight)
+this._configureShadow(this.keyLight)
 
-this.scene.add(this.mainLight)
+this.scene.add(this.keyLight)
 
-this.lights.push(this.mainLight)
-this.dynamicLights.push(this.mainLight)
+this.lights.push(this.keyLight)
+this.dynamicLights.push(this.keyLight)
+
+this.baseIntensities.set(this.keyLight,28)
 
 }
 
@@ -80,7 +92,7 @@ this.colors.secondary,
 2
 )
 
-this.rimLight.position.set(0,2,-6)
+this.rimLight.position.set(-4,3,-6)
 
 this._configureShadow(this.rimLight)
 
@@ -89,16 +101,38 @@ this.scene.add(this.rimLight)
 this.lights.push(this.rimLight)
 this.dynamicLights.push(this.rimLight)
 
+this.baseIntensities.set(this.rimLight,18)
+
+}
+
+_createFillLight(){
+
+this.fillLight=new THREE.PointLight(
+this.colors.accentSoft,
+10,
+80,
+2
+)
+
+this.fillLight.position.set(4,1,-2)
+
+this.scene.add(this.fillLight)
+
+this.lights.push(this.fillLight)
+this.dynamicLights.push(this.fillLight)
+
+this.baseIntensities.set(this.fillLight,10)
+
 }
 
 _configureShadow(light){
 
 light.castShadow=true
 
-light.shadow.mapSize.width=512
-light.shadow.mapSize.height=512
+light.shadow.mapSize.width=this.shadowMapSize
+light.shadow.mapSize.height=this.shadowMapSize
 
-light.shadow.bias=-0.0005
+light.shadow.bias=-0.0004
 light.shadow.normalBias=0.02
 
 light.shadow.radius=2
@@ -109,33 +143,43 @@ update(delta,elapsed){
 
 if(this.disposed)return
 
-if(elapsed===undefined){
-elapsed=this.clock.getElapsedTime()
-}
+if(delta<=0)return
 
-this._updateDynamicLights(elapsed)
+this.time+=delta
 
-this._updateCameraReactiveLight(elapsed)
+this._updateDynamicLights()
 
-}
+if(this.enableCameraTracking){
 
-_updateDynamicLights(elapsed){
-
-for(let i=0;i<this.dynamicLights.length;i++){
-
-const light=this.dynamicLights[i]
-
-const baseIntensity=i===0?22:16
-
-const pulse=Math.sin(elapsed*2+i*0.7)*4
-
-light.intensity=baseIntensity+pulse
+this._updateCameraTracking()
 
 }
 
 }
 
-_updateCameraReactiveLight(elapsed){
+_updateDynamicLights(){
+
+const t=this.time
+
+let i=0
+
+for(const light of this.dynamicLights){
+
+const base=this.baseIntensities.get(light)||10
+
+const pulse=
+Math.sin(t*1.7+i)*2+
+Math.sin(t*0.9+i*0.5)*1.5
+
+light.intensity=base+pulse
+
+i++
+
+}
+
+}
+
+_updateCameraTracking(){
 
 if(!this.camera)return
 
@@ -145,15 +189,15 @@ if(!cam)return
 
 this.tmpVec.copy(cam.position)
 
-this.tmpVec.multiplyScalar(0.25)
+this.tmpVec.multiplyScalar(0.35)
 
-this.tmpVec.y+=1.5
+this.tmpVec.y+=2.0
 
-this.mainLight.position.lerp(this.tmpVec,0.02)
+this.keyLight.position.lerp(this.tmpVec,0.05)
 
 }
 
-addLight(light){
+addLight(light,baseIntensity=10){
 
 if(this.disposed)return
 
@@ -162,7 +206,11 @@ this.scene.add(light)
 this.lights.push(light)
 
 if(light.isPointLight||light.isSpotLight||light.isDirectionalLight){
+
 this.dynamicLights.push(light)
+
+this.baseIntensities.set(light,baseIntensity)
+
 }
 
 }
@@ -173,19 +221,23 @@ if(this.disposed)return
 
 this.scene.remove(light)
 
-const i=this.lights.indexOf(light)
+let i=this.lights.indexOf(light)
 if(i!==-1)this.lights.splice(i,1)
 
-const j=this.dynamicLights.indexOf(light)
+let j=this.dynamicLights.indexOf(light)
 if(j!==-1)this.dynamicLights.splice(j,1)
+
+this.baseIntensities.delete(light)
 
 }
 
-setIntensity(multiplier){
+setGlobalIntensity(multiplier){
 
 for(const light of this.dynamicLights){
 
-light.intensity*=multiplier
+const base=this.baseIntensities.get(light)||10
+
+light.intensity=base*multiplier
 
 }
 
@@ -218,7 +270,9 @@ for(const light of this.lights){
 this.scene.remove(light)
 
 if(light.shadow?.map){
+
 light.shadow.map.dispose()
+
 }
 
 }
@@ -226,16 +280,21 @@ light.shadow.map.dispose()
 this.lights.length=0
 this.dynamicLights.length=0
 
+this.baseIntensities.clear()
+
 this.ambientLight=null
-this.mainLight=null
+this.keyLight=null
 this.rimLight=null
+this.fillLight=null
 
 this.tmpVec=null
+this.tmpVec2=null
 
 this.scene=null
 this.camera=null
 
 this.disposed=true
+
 this.state='disposed'
 
 }
