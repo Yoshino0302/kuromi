@@ -1,38 +1,35 @@
-const MACHINE_STATE={
-IDLE:0,
-RUNNING:1,
-PAUSED:2,
-DISPOSED:3
-}
-
 export class StateMachine{
 
-constructor(initialState=null){
+constructor(options={}){
 
-this.currentState=initialState
-this.previousState=null
+this._states=new Map()
+this._transitions=new Map()
 
-this.states=new Map()
-this.transitions=new Map()
+this._current=null
+this._previous=null
 
-this.state=MACHINE_STATE.IDLE
+this._locked=false
 
-this.timeInState=0
-this.totalTime=0
+this._context=options.context||this
 
-this.enabled=true
+this._listeners=new Map()
 
-this.onStateChange=null
+this._transitionQueue=[]
+
+this._processing=false
 
 }
 
 addState(name,config={}){
 
-this.states.set(name,{
+if(!name)throw new Error('StateMachine: state name required')
+
+this._states.set(name,{
 name,
 onEnter:config.onEnter||null,
+onExit:config.onExit||null,
 onUpdate:config.onUpdate||null,
-onExit:config.onExit||null
+onEvent:config.onEvent||null
 })
 
 return this
@@ -41,173 +38,267 @@ return this
 
 removeState(name){
 
-this.states.delete(name)
+this._states.delete(name)
+
+for(const[key,set]of this._transitions){
+
+set.delete(name)
 
 }
-
-addTransition(from,to,condition){
-
-let list=this.transitions.get(from)
-
-if(!list){
-
-list=[]
-this.transitions.set(from,list)
-
-}
-
-list.push({
-to,
-condition
-})
 
 return this
 
 }
 
-setState(name,force=false){
+addTransition(from,to,guard=null){
 
-if(!force&&this.currentState===name)return false
+if(!this._states.has(from))throw new Error(`StateMachine: unknown state ${from}`)
+if(!this._states.has(to))throw new Error(`StateMachine: unknown state ${to}`)
 
-const next=this.states.get(name)
+let set=this._transitions.get(from)
 
-if(!next)return false
+if(!set){
 
-const prev=this.states.get(this.currentState)
-
-if(prev&&prev.onExit){
-
-prev.onExit(this,name)
+set=new Map()
+this._transitions.set(from,set)
 
 }
 
-this.previousState=this.currentState
-this.currentState=name
+set.set(to,guard)
 
-this.timeInState=0
-
-if(next.onEnter){
-
-next.onEnter(this,this.previousState)
+return this
 
 }
 
-if(this.onStateChange){
+setState(name,data=null){
 
-this.onStateChange(name,this.previousState)
+if(this._locked)return false
+
+if(this._current===name)return true
+
+if(!this._states.has(name))throw new Error(`StateMachine: invalid state ${name}`)
+
+if(this._current){
+
+const allowed=this._transitions.get(this._current)
+
+if(allowed){
+
+const guard=allowed.get(name)
+
+if(guard&&guard(this._context,data)===false){
+
+return false
 
 }
+
+}
+
+}
+
+this._locked=true
+
+const prev=this._current
+
+if(prev){
+
+const prevState=this._states.get(prev)
+
+if(prevState.onExit){
+
+prevState.onExit(this._context,name,data)
+
+}
+
+}
+
+this._previous=prev
+
+this._current=name
+
+const state=this._states.get(name)
+
+if(state.onEnter){
+
+state.onEnter(this._context,prev,data)
+
+}
+
+this._emit('transition',{
+from:prev,
+to:name,
+data
+})
+
+this._locked=false
 
 return true
 
 }
 
+queueState(name,data=null){
+
+this._transitionQueue.push([name,data])
+
+if(!this._processing){
+
+this._processQueue()
+
+}
+
+}
+
+_processQueue(){
+
+this._processing=true
+
+while(this._transitionQueue.length>0){
+
+const[name,data]=this._transitionQueue.shift()
+
+this.setState(name,data)
+
+}
+
+this._processing=false
+
+}
+
 update(delta){
 
-if(!this.enabled)return
+if(!this._current)return
 
-if(this.state===MACHINE_STATE.DISPOSED)return
+const state=this._states.get(this._current)
 
-this.totalTime+=delta
-this.timeInState+=delta
+if(state.onUpdate){
 
-if(this.currentState===null)return
-
-const state=this.states.get(this.currentState)
-
-if(state&&state.onUpdate){
-
-state.onUpdate(this,delta)
-
-}
-
-const transitions=this.transitions.get(this.currentState)
-
-if(transitions){
-
-for(let i=0;i<transitions.length;i++){
-
-const t=transitions[i]
-
-if(t.condition(this)){
-
-this.setState(t.to)
-
-break
+state.onUpdate(this._context,delta)
 
 }
 
 }
 
+handleEvent(event,data){
+
+if(!this._current)return
+
+const state=this._states.get(this._current)
+
+if(state.onEvent){
+
+state.onEvent(this._context,event,data)
+
+}
+
+this._emit('event',{
+state:this._current,
+event,
+data
+})
+
+}
+
+on(event,callback){
+
+let set=this._listeners.get(event)
+
+if(!set){
+
+set=new Set()
+this._listeners.set(event,set)
+
+}
+
+set.add(callback)
+
+return()=>set.delete(callback)
+
+}
+
+once(event,callback){
+
+const off=this.on(event,(...args)=>{
+
+off()
+callback(...args)
+
+})
+
+return off
+
+}
+
+off(event,callback){
+
+const set=this._listeners.get(event)
+
+if(set){
+
+set.delete(callback)
+
 }
 
 }
 
-start(){
+_emit(event,data){
 
-this.state=MACHINE_STATE.RUNNING
+const set=this._listeners.get(event)
 
-}
+if(!set)return
 
-pause(){
+for(const cb of set){
 
-this.state=MACHINE_STATE.PAUSED
-
-}
-
-resume(){
-
-if(this.state===MACHINE_STATE.PAUSED){
-
-this.state=MACHINE_STATE.RUNNING
+cb(data)
 
 }
 
 }
 
-stop(){
+getState(){
 
-this.state=MACHINE_STATE.IDLE
-
-}
-
-is(stateName){
-
-return this.currentState===stateName
+return this._current
 
 }
 
-getTimeInState(){
+getPreviousState(){
 
-return this.timeInState
-
-}
-
-getTotalTime(){
-
-return this.totalTime
+return this._previous
 
 }
 
-reset(){
+is(state){
 
-this.previousState=null
-this.timeInState=0
-this.totalTime=0
+return this._current===state
 
 }
 
-dispose(){
+canTransition(to){
 
-this.state=MACHINE_STATE.DISPOSED
+if(!this._current)return true
 
-this.states.clear()
-this.transitions.clear()
+const map=this._transitions.get(this._current)
 
-this.currentState=null
-this.previousState=null
+if(!map)return true
 
-this.onStateChange=null
+return map.has(to)
+
+}
+
+clear(){
+
+this._states.clear()
+this._transitions.clear()
+this._listeners.clear()
+this._transitionQueue.length=0
+this._current=null
+this._previous=null
+
+}
+
+destroy(){
+
+this.clear()
+this._context=null
 
 }
 
