@@ -10,8 +10,9 @@ CONSTRUCTED:0,
 INITIALIZING:1,
 INITIALIZED:2,
 ACTIVE:3,
-DISPOSING:4,
-DISPOSED:5
+PAUSED:4,
+DISPOSING:5,
+DISPOSED:6
 }
 
 export class CameraSystem{
@@ -26,26 +27,29 @@ this.state=CAMERA_STATE.CONSTRUCTED
 
 this.initialized=false
 this.disposed=false
+this.paused=false
 
 this.clock=new THREE.Clock(false)
 
 this.cameras=new Set()
 
 this.activeCamera=null
-
 this.cinematicCamera=null
 
 this.controller=null
 this.shake=null
 this.sequencer=null
 
-this._initPromise=null
+this._delta=0
+this._time=0
 
 this._initialize()
 
 }
 
 _initialize(){
+
+if(this.disposed)return
 
 this.state=CAMERA_STATE.INITIALIZING
 
@@ -72,6 +76,7 @@ this._installDefaultSequence()
 this.clock.start()
 
 this.initialized=true
+this.paused=false
 
 this.state=CAMERA_STATE.INITIALIZED
 
@@ -81,7 +86,9 @@ _installDefaultSequence(){
 
 if(this.options.disableDefaultSequence)return
 
-const track=new CameraKeyframeTrack()
+const track=new CameraKeyframeTrack({
+interpolation:'smoother'
+})
 
 track.addKeyframe(
 0,
@@ -136,8 +143,8 @@ this.cameras.delete(camera)
 update(delta){
 
 if(this.disposed)return
-
 if(!this.initialized)return
+if(this.paused)return
 
 if(delta===undefined){
 
@@ -145,39 +152,52 @@ delta=this.clock.getDelta()
 
 }
 
-this._updateController(delta)
+if(delta<=0)return
+
+this._delta=delta
+this._time+=delta
 
 this._updateSequencer(delta)
 
+this._updateController(delta)
+
 this._updateShake(delta)
 
-this._updateActiveCamera(delta)
-
-}
-
-_updateController(delta){
-
-try{
-
-this.controller?.update?.(delta)
-
-}catch(e){
-
-this._debug('Controller update failed',e)
-
-}
+this._updateCamera(delta)
 
 }
 
 _updateSequencer(delta){
 
+const seq=this.sequencer
+
+if(!seq)return
+
 try{
 
-this.sequencer?.update?.(delta)
+seq.update(delta)
 
 }catch(e){
 
-this._debug('Sequencer update failed',e)
+this._debug('Sequencer failure',e)
+
+}
+
+}
+
+_updateController(delta){
+
+const ctrl=this.controller
+
+if(!ctrl)return
+
+try{
+
+ctrl.update(delta)
+
+}catch(e){
+
+this._debug('Controller failure',e)
 
 }
 
@@ -185,37 +205,71 @@ this._debug('Sequencer update failed',e)
 
 _updateShake(delta){
 
+const shake=this.shake
+
+if(!shake)return
+
 try{
 
-this.shake?.update?.(delta)
+shake.update(delta)
 
-const offset=this.shake?.getOffset?.()
+const offset=shake.getOffset?.()
 
 if(offset){
 
-this.cinematicCamera?.addShake?.(offset)
+this.cinematicCamera.addShake(offset)
 
 }
 
 }catch(e){
 
-this._debug('Shake update failed',e)
+this._debug('Shake failure',e)
 
 }
 
 }
 
-_updateActiveCamera(delta){
+_updateCamera(delta){
+
+const cam=this.activeCamera
+
+if(!cam)return
 
 try{
 
-this.activeCamera?.update?.(delta)
+cam.update?.(delta)
 
 }catch(e){
 
-this._debug('Camera update failed',e)
+this._debug('Camera failure',e)
 
 }
+
+}
+
+pause(){
+
+if(this.disposed)return
+if(this.paused)return
+
+this.paused=true
+
+this.clock.stop()
+
+this.state=CAMERA_STATE.PAUSED
+
+}
+
+resume(){
+
+if(this.disposed)return
+if(!this.paused)return
+
+this.paused=false
+
+this.clock.start()
+
+this.state=CAMERA_STATE.ACTIVE
 
 }
 
@@ -228,7 +282,6 @@ const cam=this.getCamera()
 if(!cam)return
 
 cam.aspect=width/height
-
 cam.updateProjectionMatrix()
 
 }
@@ -237,20 +290,19 @@ getCamera(){
 
 if(this.disposed)return null
 
-return this.activeCamera?.getCamera?.()
+return this.activeCamera?.getCamera?.()||null
 
 }
 
 getCameraObject(){
 
-return this.activeCamera
+return this.activeCamera||null
 
 }
 
 setActiveCamera(camera){
 
 if(this.disposed)return
-
 if(!camera)return
 
 this._registerCamera(camera)
@@ -269,13 +321,7 @@ this._registerCamera(camera)
 
 removeCamera(camera){
 
-if(camera===this.activeCamera){
-
-this._debug('Cannot remove active camera')
-
-return
-
-}
+if(camera===this.activeCamera)return
 
 this._unregisterCamera(camera)
 
@@ -289,17 +335,19 @@ return this.cinematicCamera?.position||null
 
 setPosition(vec3){
 
+if(this.disposed)return
 if(!vec3)return
 
-this.cinematicCamera?.position?.copy(vec3)
+this.cinematicCamera.position.copy(vec3)
 
 }
 
 lookAt(vec3){
 
+if(this.disposed)return
 if(!vec3)return
 
-this.cinematicCamera?.lookAt?.(vec3)
+this.cinematicCamera.lookAt(vec3)
 
 }
 
@@ -315,9 +363,8 @@ playSequence(track){
 
 if(this.disposed)return
 
-this.sequencer?.setTrack?.(track)
-
-this.sequencer?.play?.()
+this.sequencer.setTrack(track)
+this.sequencer.play()
 
 }
 
@@ -345,15 +392,17 @@ if(this.disposed)return
 
 this.state=CAMERA_STATE.DISPOSING
 
+this.pause()
+
 for(const cam of this.cameras){
 
 try{
 
-cam?.dispose?.()
+cam.dispose?.()
 
 }catch(e){
 
-this._debug('Camera dispose failed',e)
+this._debug('Camera dispose failure',e)
 
 }
 
@@ -362,16 +411,14 @@ this._debug('Camera dispose failed',e)
 this.cameras.clear()
 
 this.sequencer?.dispose?.()
-
 this.controller?.dispose?.()
-
 this.shake?.dispose?.()
 
 this.activeCamera=null
-this.sequencer=null
+this.cinematicCamera=null
 this.controller=null
 this.shake=null
-this.cinematicCamera=null
+this.sequencer=null
 
 this.disposed=true
 this.initialized=false
@@ -384,10 +431,7 @@ _debug(...args){
 
 if(this.debug){
 
-console.warn(
-'[KUROMI CAMERA]',
-...args
-)
+console.warn('[KUROMI CAMERA]',...args)
 
 }
 
