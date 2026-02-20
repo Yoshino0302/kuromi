@@ -6,9 +6,20 @@ STOPPED:3,
 DISPOSED:4
 }
 
+const PLAYBACK_MODE={
+FORWARD:0,
+REVERSE:1,
+PINGPONG:2
+}
+
+const BLEND_MODE={
+OVERRIDE:0,
+MIX:1
+}
+
 export class CinematicSequencer{
 
-constructor(camera){
+constructor(camera,options={}){
 
 this.camera=camera||null
 
@@ -19,18 +30,26 @@ this.duration=0
 
 this.playing=false
 this.loop=false
-this.playbackRate=1
 
-this.state=SEQUENCER_STATE.IDLE
+this.playbackRate=options.playbackRate??1
+
+this.playbackMode=PLAYBACK_MODE.FORWARD
+this.blendMode=BLEND_MODE.MIX
 
 this.weight=1
 
+this.state=SEQUENCER_STATE.IDLE
+
 this._disposed=false
+
+this._direction=1
 
 this._lastSample=null
 
 this._onComplete=null
 this._onLoop=null
+
+this._sampleCache=null
 
 }
 
@@ -42,9 +61,11 @@ this.track=track||null
 
 this.time=0
 
-this.duration=track?.duration||0
+this.duration=track?.getDuration?.()??track?.duration??0
 
-this._lastSample=null
+this._sampleCache=null
+
+this.state=SEQUENCER_STATE.IDLE
 
 }
 
@@ -59,6 +80,18 @@ setPlaybackRate(rate){
 if(!Number.isFinite(rate))return
 
 this.playbackRate=Math.max(0,rate)
+
+}
+
+setPlaybackMode(mode){
+
+this.playbackMode=mode
+
+}
+
+setBlendMode(mode){
+
+this.blendMode=mode
 
 }
 
@@ -83,10 +116,17 @@ this._onLoop=callback
 play(reset=true){
 
 if(this._disposed)return
-
 if(!this.track)return
 
-if(reset)this.time=0
+if(reset){
+
+this.time=this.playbackMode===PLAYBACK_MODE.REVERSE
+?this.duration
+:0
+
+}
+
+this._direction=this.playbackMode===PLAYBACK_MODE.REVERSE?-1:1
 
 this.playing=true
 
@@ -98,8 +138,6 @@ pause(){
 
 if(this._disposed)return
 
-if(!this.playing)return
-
 this.playing=false
 
 this.state=SEQUENCER_STATE.PAUSED
@@ -109,7 +147,6 @@ this.state=SEQUENCER_STATE.PAUSED
 resume(){
 
 if(this._disposed)return
-
 if(!this.track)return
 
 this.playing=true
@@ -133,54 +170,115 @@ this.state=SEQUENCER_STATE.STOPPED
 seek(time){
 
 if(this._disposed)return
-
 if(!this.track)return
 
 this.time=Math.max(0,Math.min(time,this.duration))
 
-this._applySample(this.track.sample(this.time),1)
+this._sampleCache=null
+
+this._applyCurrentSample()
 
 }
 
 update(delta){
 
 if(this._disposed)return
-
 if(!this.playing)return
-
 if(!this.track)return
-
 if(this.duration<=0)return
 
 delta=Math.max(0,delta)
 
-this.time+=delta*this.playbackRate
+const dt=delta*this.playbackRate*this._direction
 
-if(this.time>=this.duration){
+let newTime=this.time+dt
 
-if(this.loop){
+let completed=false
+let looped=false
 
-this.time=this.time%this.duration
+if(this.playbackMode===PLAYBACK_MODE.PINGPONG){
 
-if(this._onLoop)this._onLoop()
+if(newTime>=this.duration){
+
+newTime=this.duration
+this._direction=-1
+looped=true
+
+}else if(newTime<=0){
+
+newTime=0
+this._direction=1
+looped=true
+
+}
 
 }else{
 
-this.time=this.duration
+if(newTime>=this.duration){
+
+if(this.loop){
+
+newTime=newTime%this.duration
+looped=true
+
+}else{
+
+newTime=this.duration
+completed=true
+
+}
+
+}
+
+if(newTime<=0){
+
+if(this.loop){
+
+newTime=this.duration+(newTime%this.duration)
+looped=true
+
+}else{
+
+newTime=0
+completed=true
+
+}
+
+}
+
+}
+
+this.time=newTime
+
+this._applyCurrentSample()
+
+if(looped&&this._onLoop){
+
+this._onLoop()
+
+}
+
+if(completed){
 
 this.playing=false
 
 this.state=SEQUENCER_STATE.STOPPED
 
-if(this._onComplete)this._onComplete()
+if(this._onComplete){
+
+this._onComplete()
 
 }
 
 }
+
+}
+
+_applyCurrentSample(){
 
 const sample=this.track.sample(this.time)
 
-if(sample){
+if(!sample)return
 
 this._applySample(sample,this.weight)
 
@@ -188,25 +286,22 @@ this._lastSample=sample
 
 }
 
-}
-
 _applySample(sample,weight){
 
-if(!this.camera)return
+const camera=this.camera
 
+if(!camera)return
 if(!sample)return
 
-if(weight<=0)return
+if(this.blendMode===BLEND_MODE.OVERRIDE||weight>=1){
 
-if(weight>=1){
-
-this.camera.setPosition(
+camera.setPosition(
 sample.position.x,
 sample.position.y,
 sample.position.z
 )
 
-this.camera.setTarget(
+camera.setTarget(
 sample.target.x,
 sample.target.y,
 sample.target.z
@@ -216,25 +311,27 @@ return
 
 }
 
-const currentPos=this.camera.getPosition?.()
-const currentTarget=this.camera.getTarget?.()
+if(weight<=0)return
 
-if(currentPos){
+const pos=camera.getPosition?.()
+const target=camera.getTarget?.()
 
-this.camera.setPosition(
-currentPos.x+(sample.position.x-currentPos.x)*weight,
-currentPos.y+(sample.position.y-currentPos.y)*weight,
-currentPos.z+(sample.position.z-currentPos.z)*weight
+if(pos){
+
+camera.setPosition(
+pos.x+(sample.position.x-pos.x)*weight,
+pos.y+(sample.position.y-pos.y)*weight,
+pos.z+(sample.position.z-pos.z)*weight
 )
 
 }
 
-if(currentTarget){
+if(target){
 
-this.camera.setTarget(
-currentTarget.x+(sample.target.x-currentTarget.x)*weight,
-currentTarget.y+(sample.target.y-currentTarget.y)*weight,
-currentTarget.z+(sample.target.z-currentTarget.z)*weight
+camera.setTarget(
+target.x+(sample.target.x-target.x)*weight,
+target.y+(sample.target.y-target.y)*weight,
+target.z+(sample.target.z-target.z)*weight
 )
 
 }
@@ -261,9 +358,9 @@ return this.duration
 
 getProgress(){
 
-if(this.duration<=0)return 0
-
-return this.time/this.duration
+return this.duration>0
+?this.time/this.duration
+:0
 
 }
 
@@ -276,6 +373,7 @@ this.stop()
 this.track=null
 this.camera=null
 
+this._sampleCache=null
 this._lastSample=null
 
 this._onComplete=null
@@ -288,3 +386,7 @@ this.state=SEQUENCER_STATE.DISPOSED
 }
 
 }
+
+CinematicSequencer.STATE=SEQUENCER_STATE
+CinematicSequencer.PLAYBACK_MODE=PLAYBACK_MODE
+CinematicSequencer.BLEND_MODE=BLEND_MODE
