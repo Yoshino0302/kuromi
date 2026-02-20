@@ -1,124 +1,34 @@
 import * as THREE from 'https://jspm.dev/three'
 import {Renderer} from '../renderer/Renderer.js'
-import {RenderPipeline} from '../renderer/RenderPipeline.js'
+import {CinematicRenderPipeline} from '../renderer/CinematicRenderPipeline.js'
 import {SceneManager} from '../scene/SceneManager.js'
 import {CameraSystem} from '../camera/CameraSystem.js'
-import {PerformanceMonitor} from '../systems/PerformanceMonitor.js'
-import {PerformanceScaler} from '../systems/PerformanceScaler.js'
 import {SystemManager} from '../systems/SystemManager.js'
 import {TaskScheduler} from '../systems/TaskScheduler.js'
 import {MemoryMonitor} from '../systems/MemoryMonitor.js'
 import {AssetManager} from '../assets/AssetManager.js'
 import {EnvironmentSystem} from '../world/EnvironmentSystem.js'
+import {PerformanceMonitor} from '../systems/PerformanceMonitor.js'
+import {PerformanceScaler} from '../systems/PerformanceScaler.js'
 
-const ENGINE_STATE={
-CONSTRUCTED:0,
-INITIALIZING:1,
-INITIALIZED:2,
-RUNNING:3,
-PAUSED:4,
-STOPPED:5,
-SHUTTING_DOWN:6,
-DESTROYED:7
-}
+const ENGINE_STATE={CONSTRUCTED:0,INITIALIZING:1,INITIALIZED:2,RUNNING:3,PAUSED:4,STOPPED:5,SHUTTING_DOWN:6,DESTROYED:7}
 
-class KernelClock{
-constructor(engine){
-this.engine=engine
-this.time=0
-this.delta=0
-this.last=0
-}
-reset(now){
-this.last=now||performance.now()
-}
-update(now){
-let delta=(now-this.last)*0.001
-this.last=now
-if(delta>this.engine.maxDelta)delta=this.engine.maxDelta
-if(delta<this.engine.minDelta)delta=this.engine.minDelta
-this.delta=delta*this.engine.timeScale
-this.time+=this.delta
-return this.delta
-}
-}
-
-class FramePacer{
-constructor(){
-this.enabled=false
-this.targetFPS=60
-this.frameDuration=1000/60
-this.last=0
-}
-setTargetFPS(fps){
-this.targetFPS=fps
-this.frameDuration=1000/fps
-}
-begin(now){
-if(!this.enabled)return true
-if(now-this.last>=this.frameDuration){
-this.last=now
-return true
-}
-return false
-}
-}
-
-class ThreadManager{
-constructor(){
-this.workers=new Set()
-}
-create(url){
-const w=new Worker(url,{type:'module'})
-this.workers.add(w)
-return w
-}
-dispose(){
-for(const w of this.workers)w.terminate()
-this.workers.clear()
-}
-}
-
-class SubsystemRegistry{
-constructor(){
-this.systems=[]
-}
-register(system,priority=0){
-this.systems.push({system,priority})
-this.systems.sort((a,b)=>a.priority-b.priority)
-}
-update(delta){
-for(const s of this.systems){
-s.system?.update?.(delta)
-}
-}
-dispose(){
-this.systems.length=0
-}
-}
-
-class RenderIsolation{
-constructor(engine){
-this.engine=engine
-}
-exec(fn){
-try{
-fn()
-}catch(e){
-this.engine._emit('render:error',e)
-if(this.engine.debug)console.warn(e)
-}
-}
+const FRAME_PHASE={
+BEGIN:0,
+FIXED:1,
+UPDATE:2,
+PRE_RENDER:3,
+RENDER:4,
+POST_RENDER:5,
+END:6
 }
 
 export class Engine{
 
 static instance=null
 
-static getInstance(options){
-if(!Engine.instance){
-Engine.instance=new Engine(options)
-}
+static getInstance(options={}){
+if(!Engine.instance)Engine.instance=new Engine(options)
 return Engine.instance
 }
 
@@ -127,37 +37,35 @@ constructor(options={}){
 if(Engine.instance)return Engine.instance
 Engine.instance=this
 
-this.options=options||{}
+this.options=options
 this.debug=options.debug===true
+this.cinematic=true
 
 this.state=ENGINE_STATE.CONSTRUCTED
 
-this.running=false
-this.initialized=false
-this.destroyed=false
-this.paused=false
-
 this.clock=new THREE.Clock(false)
 
-this.kernelClock=new KernelClock(this)
-this.framePacer=new FramePacer()
-this.threadManager=new ThreadManager()
-this.subsystemRegistry=new SubsystemRegistry()
-this.renderIsolation=new RenderIsolation(this)
-
-this.delta=0
 this.time=0
+this.delta=0
+this.rawDelta=0
 this.frame=0
+this.alpha=0
 
 this.timeScale=1
-
 this.fixedDelta=1/60
+this.maxDelta=0.1
+this.minDelta=1e-6
 this.accumulator=0
-this.alpha=0
-this.maxSubSteps=10
+this.maxSubSteps=5
 
-this.maxDelta=0.25
-this.minDelta=0.000001
+this.targetFPS=60
+this.targetFrameTime=1/this.targetFPS
+
+this.running=false
+this.paused=false
+this.initialized=false
+this.destroyed=false
+this.disposed=false
 
 this.renderer=null
 this.pipeline=null
@@ -171,85 +79,125 @@ this.environmentSystem=null
 this.performanceMonitor=null
 this.performanceScaler=null
 
+this.executionGraph=new Array(16)
+this.executionGraphSize=0
+
+this.frameHistory=new Float32Array(120)
+this.frameHistoryIndex=0
+
+this.exposureHistory=new Float32Array(64)
+this.exposureIndex=0
+
+this.commandQueue=new Array(1024)
+this.commandCount=0
+
+this.listeners=new Map()
+
 this._rafId=0
 this._loopActive=false
-this._lastNow=0
 
-this._listeners=new Map()
+this._lastNow=0
+this._frameStart=0
+this._frameCPU=0
+this._frameGPU=0
+
+this._panic=false
+this._phase=FRAME_PHASE.BEGIN
 
 this._resizeObserver=null
 
 this._boundTick=this._tick.bind(this)
-this._boundResize=this._handleResize.bind(this)
-this._boundVisibility=this._handleVisibility.bind(this)
+this._boundResize=this._resize.bind(this)
+this._boundVisibility=this._visibility.bind(this)
 
 Object.seal(this)
 
 }
 
-/* INIT FULL */
-
 async init(){
 
-if(this.initialized)return
-if(this.state===ENGINE_STATE.INITIALIZING)return
+if(this.initialized)return this
 
 this.state=ENGINE_STATE.INITIALIZING
 
 this._emit('init:start')
 
-this.assetManager=new AssetManager(this)
-
-this.renderer=new Renderer(this.options.renderer||{})
-await this.renderer.init?.()
-
-this.pipeline=new RenderPipeline(this)
-await this.pipeline.init?.()
-
-this.sceneManager=new SceneManager(this)
-await this.sceneManager.init?.()
-
-this.cameraSystem=new CameraSystem(this)
-await this.cameraSystem.init?.()
-
+this.renderer=new Renderer({...this.options,engine:this})
+this.pipeline=new CinematicRenderPipeline(this)
+this.sceneManager=new SceneManager({...this.options,engine:this})
+this.cameraSystem=new CameraSystem({...this.options,engine:this})
 this.systemManager=new SystemManager(this)
-await this.systemManager.init?.()
-
 this.scheduler=new TaskScheduler(this)
-await this.scheduler.init?.()
-
+this.memoryMonitor=new MemoryMonitor(this)
+this.assetManager=new AssetManager(this)
 this.environmentSystem=new EnvironmentSystem(this)
+
+await this.renderer.init?.()
+await this.pipeline.init?.()
+await this.sceneManager.init?.()
+await this.cameraSystem.init?.()
+await this.systemManager.init?.()
+await this.scheduler.init?.()
+await this.assetManager.init?.()
 await this.environmentSystem.init?.()
 
-this.performanceMonitor=new PerformanceMonitor(this)
-await this.performanceMonitor.init?.()
+this.performanceMonitor=new PerformanceMonitor({targetFPS:this.targetFPS,sampleInterval:0.25})
 
-this.performanceScaler=new PerformanceScaler(this)
-await this.performanceScaler.init?.()
+const rawRenderer=this.renderer.getRenderer?.()
 
-this.memoryMonitor=new MemoryMonitor(this)
-await this.memoryMonitor.init?.()
+if(rawRenderer){
 
-this._setupResize()
-this._setupVisibility()
+this.performanceScaler=new PerformanceScaler(rawRenderer,{
+targetFPS:this.targetFPS,
+minFPS:24,
+maxScale:1,
+minScale:0.5
+})
+
+this.performanceScaler.attachPipeline?.(this.pipeline)
+
+const size=this.renderer.getSize?.()
+
+if(size)this.performanceScaler.setSize(size.width,size.height)
+
+}
+
+this._buildExecutionGraph()
+
+this._installResize()
+this._installVisibility()
 
 this.initialized=true
+this.destroyed=false
+this.disposed=false
 
 this.state=ENGINE_STATE.INITIALIZED
 
 this._emit('init:complete')
 
+return this
+
 }
 
-/* START */
+_buildExecutionGraph(){
+
+this.executionGraphSize=0
+
+this.executionGraph[this.executionGraphSize++]=this._phaseBegin.bind(this)
+this.executionGraph[this.executionGraphSize++]=this._phaseFixed.bind(this)
+this.executionGraph[this.executionGraphSize++]=this._phaseUpdate.bind(this)
+this.executionGraph[this.executionGraphSize++]=this._phasePreRender.bind(this)
+this.executionGraph[this.executionGraphSize++]=this._phaseRender.bind(this)
+this.executionGraph[this.executionGraphSize++]=this._phasePostRender.bind(this)
+this.executionGraph[this.executionGraphSize++]=this._phaseEnd.bind(this)
+
+}
 
 async start(){
 
 if(this.running)return
 
-if(!this.initialized){
-await this.init()
-}
+if(!this.initialized)await this.init()
 
 this.running=true
 this.paused=false
@@ -258,15 +206,46 @@ this.clock.start()
 
 this._lastNow=performance.now()
 
-this.kernelClock.reset(this._lastNow)
+this._startLoop()
 
 this.state=ENGINE_STATE.RUNNING
 
 this._emit('start')
 
-this._startLoop()
+}
+
+pause(){
+
+if(!this.running)return
+if(this.paused)return
+
+this.paused=true
+
+this.clock.stop()
+
+this.state=ENGINE_STATE.PAUSED
+
+this._emit('pause')
 
 }
+
+resume(){
+
+if(!this.running)return
+if(!this.paused)return
+
+this.paused=false
+
+this.clock.start()
+
+this._lastNow=performance.now()
+
+this.state=ENGINE_STATE.RUNNING
+
+this._emit('resume')
+
+}
+
 _startLoop(){
 
 if(this._loopActive)return
@@ -284,8 +263,6 @@ this._rafId=requestAnimationFrame(loop)
 
 if(this.paused)return
 
-if(!this.framePacer.begin(now))return
-
 this._tick(now)
 
 }
@@ -296,90 +273,136 @@ this._rafId=requestAnimationFrame(loop)
 
 _stopLoop(){
 
-if(this._rafId){
 cancelAnimationFrame(this._rafId)
+
 this._rafId=0
-}
 
 this._loopActive=false
 
 }
+  _tick(now){
 
-/* MAIN TICK */
+this._frameStart=now
 
-_tick(now){
+this.rawDelta=(now-this._lastNow)*0.001
 
-const delta=this.kernelClock.update(now)
+this._lastNow=now
 
-this.delta=delta
-this.time=this.kernelClock.time
+if(!Number.isFinite(this.rawDelta))this.rawDelta=0
+
+if(this.rawDelta>this.maxDelta){
+this.rawDelta=this.maxDelta
+this._panic=true
+this._emit('panic',this.rawDelta)
+}
+
+if(this.rawDelta<this.minDelta)this.rawDelta=this.minDelta
+
+this.delta=this.rawDelta*this.timeScale
+
+this._recordFrameTime(this.delta)
+
+this._stabilizeFrameTime()
+
+this.accumulator+=this.delta
+
+this._runExecutionGraph()
+
+this._frameCPU=(performance.now()-this._frameStart)*0.001
+
 this.frame++
 
-this.accumulator+=delta
+this.time+=this.delta
 
-let steps=0
+}
 
-this._emit('frame:start',delta)
+_runExecutionGraph(){
+
+for(let i=0;i<this.executionGraphSize;i++){
+this.executionGraph[i]()
+}
+
+}
+
+_phaseBegin(){
+
+this._phase=FRAME_PHASE.BEGIN
+
+this.commandCount=0
+
+this._emit('frame:begin',this.delta)
+
+}
+
+_phaseFixed(){
+
+this._phase=FRAME_PHASE.FIXED
+
+let subSteps=0
 
 while(this.accumulator>=this.fixedDelta){
 
-if(steps>=this.maxSubSteps){
+if(subSteps>=this.maxSubSteps){
 
 this.accumulator=0
 
-this._emit('panic')
+this._panic=true
+
+this._emit('panic:spiral')
 
 break
 
 }
 
-this._emit('frame:fixed',this.fixedDelta)
+this.scheduler?.fixedUpdate?.(this.fixedDelta)
 
-this._safeCall(this.scheduler,'fixedUpdate',this.fixedDelta)
-
-this._safeCall(this.systemManager,'fixedUpdate',this.fixedDelta)
-
-steps++
+this.systemManager?.fixedUpdate?.(this.fixedDelta)
 
 this.accumulator-=this.fixedDelta
+
+subSteps++
 
 }
 
 this.alpha=this.accumulator/this.fixedDelta
 
-this._emit('frame:update',delta)
+}
 
-this._safeCall(this.scheduler,'update',delta)
+_phaseUpdate(){
 
-this._safeCall(this.systemManager,'update',delta)
+this._phase=FRAME_PHASE.UPDATE
 
-this._safeCall(this.environmentSystem,'update',delta)
+this.scheduler?.update?.(this.delta)
 
-this._safeCall(this.cameraSystem,'update',delta)
+this.systemManager?.update?.(this.delta)
 
-this._safeCall(this.sceneManager,'update',delta,this.time,this.alpha)
+this.environmentSystem?.update?.(this.delta)
 
-this.subsystemRegistry.update(delta)
+this.cameraSystem?.update?.(this.delta)
 
-this._safeCall(this.systemManager,'lateUpdate',delta)
+this.sceneManager?.update?.(this.delta,this.time,this.alpha)
 
-const fps=this.performanceMonitor?.update?.(delta)||0
-
-this.performanceScaler?.update?.(fps,delta)
-
-this.memoryMonitor?.update?.(delta)
-
-this._emit('frame:render',delta)
-
-this._render(delta,this.alpha)
-
-this._emit('frame:end',delta)
+this._updateTemporalExposure()
 
 }
 
-/* RENDER */
+_phasePreRender(){
 
-_render(delta,alpha){
+this._phase=FRAME_PHASE.PRE_RENDER
+
+this.performanceMonitor?.update?.(this.delta)
+
+const fps=this.performanceMonitor?.getFPS?.()||this.targetFPS
+
+this.performanceScaler?.update?.(fps,this.delta)
+
+this.memoryMonitor?.update?.(this.delta)
+
+}
+
+_phaseRender(){
+
+this._phase=FRAME_PHASE.RENDER
 
 const renderer=this.renderer
 const scene=this.sceneManager?.getScene?.()
@@ -387,197 +410,172 @@ const camera=this.cameraSystem?.getCamera?.()
 
 if(!renderer||!scene||!camera)return
 
-this.renderIsolation.exec(()=>{
-
-if(this.pipeline?.render){
-
-this.pipeline.render(renderer,scene,camera,delta,alpha)
-
-}else{
-
-renderer.render(scene,camera)
+this.pipeline?.render?.(
+renderer,
+scene,
+camera,
+this.delta,
+this.alpha
+)
 
 }
 
-})
+_phasePostRender(){
+
+this._phase=FRAME_PHASE.POST_RENDER
+
+this._executeCommandQueue()
+
+this._emit('frame:rendered',this.delta)
 
 }
 
-/* SAFE CALL */
+_phaseEnd(){
 
-_safeCall(obj,method,...args){
+this._phase=FRAME_PHASE.END
 
-if(!obj)return
+this._emit('frame:end',this.delta)
 
-const fn=obj?.[method]
-
-if(!fn)return
-
-try{
-
-return fn.apply(obj,args)
-
-}catch(e){
-
-this._emit('system:error',{system:obj,error:e})
-
-if(this.debug){
-console.warn('[ENGINE SYSTEM ERROR]',method,e)
-}
+this._panic=false
 
 }
 
-}
+_recordFrameTime(dt){
 
-/* STOP */
+this.frameHistory[this.frameHistoryIndex]=dt
 
-stop(){
+this.frameHistoryIndex++
 
-if(!this.running)return
-
-this.running=false
-
-this.clock.stop()
-
-this._stopLoop()
-
-this.state=ENGINE_STATE.STOPPED
-
-this._emit('stop')
-
-}
-
-/* PAUSE */
-
-pause(){
-
-if(!this.running)return
-if(this.paused)return
-
-this.paused=true
-
-this.clock.stop()
-
-this.state=ENGINE_STATE.PAUSED
-
-this._emit('pause')
-
-}
-
-/* RESUME */
-
-resume(){
-
-if(!this.running)return
-if(!this.paused)return
-
-this.paused=false
-
-this.clock.start()
-
-this._lastNow=performance.now()
-
-this.kernelClock.reset(this._lastNow)
-
-this.state=ENGINE_STATE.RUNNING
-
-this._emit('resume')
-
-}
-
-/* SHUTDOWN */
-
-async shutdown(){
-
-if(this.destroyed)return
-
-this.state=ENGINE_STATE.SHUTTING_DOWN
-
-this._emit('shutdown:start')
-
-this.stop()
-
-this._removeResize()
-
-this._removeVisibility()
-
-await this._dispose(this.pipeline)
-
-await this._dispose(this.sceneManager)
-
-await this._dispose(this.cameraSystem)
-
-await this._dispose(this.systemManager)
-
-await this._dispose(this.scheduler)
-
-await this._dispose(this.environmentSystem)
-
-await this._dispose(this.assetManager)
-
-await this._dispose(this.performanceScaler)
-
-await this._dispose(this.performanceMonitor)
-
-await this._dispose(this.memoryMonitor)
-
-await this._dispose(this.renderer)
-
-this.threadManager.dispose()
-
-this.subsystemRegistry.dispose()
-
-this.initialized=false
-
-this.destroyed=true
-
-Engine.instance=null
-
-this.state=ENGINE_STATE.DESTROYED
-
-this._emit('shutdown:complete')
-
-}
-
-/* DISPOSE */
-
-async _dispose(system){
-
-if(!system)return
-
-try{
-
-await system?.dispose?.()
-
-}catch(e){
-
-if(this.debug){
-console.warn('[ENGINE DISPOSE ERROR]',e)
+if(this.frameHistoryIndex>=this.frameHistory.length){
+this.frameHistoryIndex=0
 }
 
 }
 
+_stabilizeFrameTime(){
+
+let sum=0
+
+const len=this.frameHistory.length
+
+for(let i=0;i<len;i++){
+sum+=this.frameHistory[i]
 }
 
-/* RESIZE */
+const avg=sum/len
 
-_handleResize(){
+if(avg<=0)return
 
-this.renderer?.resize?.()
+const diff=this.delta-avg
 
-const size=this.renderer?.getSize?.()
+this.delta-=diff*0.1
+
+}
+
+_updateTemporalExposure(){
+
+const exposure=this.pipeline?.currentExposure||1
+
+this.exposureHistory[this.exposureIndex]=exposure
+
+this.exposureIndex++
+
+if(this.exposureIndex>=this.exposureHistory.length){
+this.exposureIndex=0
+}
+
+}
+
+_executeCommandQueue(){
+
+for(let i=0;i<this.commandCount;i++){
+
+const cmd=this.commandQueue[i]
+
+if(cmd)cmd()
+
+this.commandQueue[i]=null
+
+}
+
+this.commandCount=0
+
+}
+
+enqueueCommand(fn){
+
+if(this.commandCount>=this.commandQueue.length)return
+
+this.commandQueue[this.commandCount++]=fn
+
+}
+
+getAverageFrameTime(){
+
+let sum=0
+
+for(let i=0;i<this.frameHistory.length;i++){
+sum+=this.frameHistory[i]
+}
+
+return sum/this.frameHistory.length
+
+}
+
+getAverageExposure(){
+
+let sum=0
+
+for(let i=0;i<this.exposureHistory.length;i++){
+sum+=this.exposureHistory[i]
+}
+
+return sum/this.exposureHistory.length
+
+}
+  _resize(){
+
+const renderer=this.renderer
+
+if(!renderer)return
+
+renderer.resize?.()
+
+const size=renderer.getSize?.()
 
 if(size){
+
+this.pipeline?.resize?.(size.width,size.height)
 
 this.performanceScaler?.setSize?.(size.width,size.height)
 
 }
 
-this._emit('resize')
+this.enqueueCommand(()=>{
+
+this._emit('resize',size)
+
+})
 
 }
 
-_setupResize(){
+_visibility(){
+
+if(document.visibilityState==='hidden'){
+
+this.pause()
+
+}else{
+
+this.resume()
+
+}
+
+this._emit('visibility',document.visibilityState)
+
+}
+
+_installResize(){
 
 window.addEventListener('resize',this._boundResize,{passive:true})
 
@@ -597,31 +595,17 @@ _removeResize(){
 
 window.removeEventListener('resize',this._boundResize)
 
-this._resizeObserver?.disconnect?.()
+if(this._resizeObserver){
+
+this._resizeObserver.disconnect()
 
 this._resizeObserver=null
 
 }
 
-/* VISIBILITY */
-
-_handleVisibility(){
-
-if(document.visibilityState==='hidden'){
-
-this.pause()
-
-}else{
-
-this.resume()
-
 }
 
-this._emit('visibility',document.visibilityState)
-
-}
-
-_setupVisibility(){
+_installVisibility(){
 
 document.addEventListener('visibilitychange',this._boundVisibility)
 
@@ -633,51 +617,129 @@ document.removeEventListener('visibilitychange',this._boundVisibility)
 
 }
 
-/* EVENTS */
+stop(){
 
-on(event,callback){
+if(!this.running)return
 
-if(!this._listeners.has(event)){
+this.running=false
 
-this._listeners.set(event,new Set())
+this.paused=false
+
+this.clock.stop()
+
+this._stopLoop()
+
+this.state=ENGINE_STATE.STOPPED
+
+this._emit('stop')
 
 }
 
-const set=this._listeners.get(event)
+async shutdown(){
 
-set.add(callback)
+if(this.destroyed)return
 
-return()=>set.delete(callback)
+this.state=ENGINE_STATE.SHUTTING_DOWN
+
+this._emit('shutdown:start')
+
+this.stop()
+
+this._removeResize()
+
+this._removeVisibility()
+
+await this._dispose(this.pipeline)
+await this._dispose(this.sceneManager)
+await this._dispose(this.cameraSystem)
+await this._dispose(this.systemManager)
+await this._dispose(this.scheduler)
+await this._dispose(this.environmentSystem)
+await this._dispose(this.assetManager)
+await this._dispose(this.performanceScaler)
+await this._dispose(this.performanceMonitor)
+await this._dispose(this.renderer)
+
+this.initialized=false
+this.destroyed=true
+this.disposed=true
+
+Engine.instance=null
+
+this.state=ENGINE_STATE.DESTROYED
+
+this._emit('shutdown:complete')
 
 }
 
-off(event,callback){
+async restart(){
 
-const set=this._listeners.get(event)
+await this.shutdown()
 
-if(!set)return
+this.destroyed=false
+this.disposed=false
 
-set.delete(callback)
+await this.init()
+
+await this.start()
+
+}
+
+async _dispose(system){
+
+if(!system)return
+
+try{
+
+await system.dispose?.()
+
+}catch(e){
+
+if(this.debug){
+
+console.warn('[ENGINE DISPOSE ERROR]',e)
+
+}
+
+}
+
+}
+
+on(event,fn){
+
+let set=this.listeners.get(event)
+
+if(!set){
+
+set=new Set()
+
+this.listeners.set(event,set)
+
+}
+
+set.add(fn)
+
+return()=>set.delete(fn)
 
 }
 
 _emit(event,data){
 
-const set=this._listeners.get(event)
+const set=this.listeners.get(event)
 
 if(!set)return
 
-for(const cb of set){
+for(const fn of set){
 
 try{
 
-cb(data)
+fn(data)
 
 }catch(e){
 
 if(this.debug){
+
 console.warn('[ENGINE EVENT ERROR]',e)
-}
 
 }
 
@@ -685,21 +747,34 @@ console.warn('[ENGINE EVENT ERROR]',e)
 
 }
 
-/* GETTERS */
+}
+
+setTimeScale(scale){
+
+if(!Number.isFinite(scale))return
+
+this.timeScale=Math.max(0,scale)
+
+this._emit('timescale',this.timeScale)
+
+}
 
 getRenderer(){return this.renderer}
+getPipeline(){return this.pipeline}
 getScene(){return this.sceneManager?.getScene?.()}
 getCamera(){return this.cameraSystem?.getCamera?.()}
-getPerformance(){return this.performanceMonitor?.getMetrics?.()}
-getScale(){return this.performanceScaler?.getScale?.()??1}
-getTime(){return this.time}
 getFrame(){return this.frame}
+getTime(){return this.time}
+getDelta(){return this.delta}
+getAlpha(){return this.alpha}
+getFPS(){return this.performanceMonitor?.getFPS?.()||0}
+getExposure(){return this.pipeline?.currentExposure||1}
+getAverageExposure(){return this.getAverageExposure?.()}
 getState(){return this.state}
-getTimeScale(){return this.timeScale}
-getInterpolationAlpha(){return this.alpha}
 isRunning(){return this.running}
 isPaused(){return this.paused}
 isInitialized(){return this.initialized}
 isDestroyed(){return this.destroyed}
+isDisposed(){return this.disposed}
 
 }
