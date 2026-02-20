@@ -13,15 +13,9 @@ import {PerformanceScaler} from '../systems/PerformanceScaler.js'
 
 const ENGINE_STATE={CONSTRUCTED:0,INITIALIZING:1,INITIALIZED:2,RUNNING:3,PAUSED:4,STOPPED:5,SHUTTING_DOWN:6,DESTROYED:7}
 
-const FRAME_PHASE={
-BEGIN:0,
-FIXED:1,
-UPDATE:2,
-PRE_RENDER:3,
-RENDER:4,
-POST_RENDER:5,
-END:6
-}
+const EXECUTION_MODE={CPU_PRIORITY:0,GPU_PRIORITY:1,CINEMATIC_PRIORITY:2}
+
+const FRAME_PHASE={BEGIN:0,FIXED:1,UPDATE:2,PRE_RENDER:3,RENDER:4,POST_RENDER:5,END:6}
 
 export class Engine{
 
@@ -38,12 +32,22 @@ if(Engine.instance)return Engine.instance
 Engine.instance=this
 
 this.options=options
-this.debug=options.debug===true
-this.cinematic=true
 
 this.state=ENGINE_STATE.CONSTRUCTED
 
+this.executionMode=EXECUTION_MODE.CINEMATIC_PRIORITY
+
+this.cinematic=true
+
 this.clock=new THREE.Clock(false)
+
+this.cinematicClock=0
+
+this.targetFPS=options.targetFPS||23.976
+
+this.frameInterval=1/this.targetFPS
+
+this.lockFPS=true
 
 this.time=0
 this.delta=0
@@ -51,21 +55,14 @@ this.rawDelta=0
 this.frame=0
 this.alpha=0
 
-this.timeScale=1
-this.fixedDelta=1/60
-this.maxDelta=0.1
-this.minDelta=1e-6
 this.accumulator=0
-this.maxSubSteps=5
-
-this.targetFPS=60
-this.targetFrameTime=1/this.targetFPS
+this.fixedDelta=1/60
+this.maxSubSteps=4
 
 this.running=false
 this.paused=false
 this.initialized=false
 this.destroyed=false
-this.disposed=false
 
 this.renderer=null
 this.pipeline=null
@@ -79,36 +76,76 @@ this.environmentSystem=null
 this.performanceMonitor=null
 this.performanceScaler=null
 
-this.executionGraph=new Array(16)
+this.executionGraph=new Array(32)
 this.executionGraphSize=0
 
-this.frameHistory=new Float32Array(120)
-this.frameHistoryIndex=0
-
-this.exposureHistory=new Float32Array(64)
-this.exposureIndex=0
-
-this.commandQueue=new Array(1024)
+this.commandQueue=new Array(4096)
 this.commandCount=0
 
 this.listeners=new Map()
+
+this.frameHistory=new Float32Array(256)
+this.frameHistoryIndex=0
+
+this.exposureHistory=new Float32Array(256)
+this.exposureIndex=0
+
+this.temporalState={
+viewMatrix:new THREE.Matrix4(),
+projectionMatrix:new THREE.Matrix4(),
+viewProjectionMatrix:new THREE.Matrix4(),
+prevViewMatrix:new THREE.Matrix4(),
+prevProjectionMatrix:new THREE.Matrix4(),
+prevViewProjectionMatrix:new THREE.Matrix4(),
+cameraPosition:new THREE.Vector3(),
+prevCameraPosition:new THREE.Vector3(),
+jitter:new THREE.Vector2(),
+prevJitter:new THREE.Vector2()
+}
+
+this.cameraPhysical={
+sensorWidth:36,
+sensorHeight:24,
+focalLength:50,
+aperture:1.4,
+shutterSpeed:1/48,
+ISO:100,
+focusDistance:10,
+shutterAngle:180
+}
+
+this.exposureState={
+current:1,
+target:1,
+adaptationRate:1.5,
+min:0.0001,
+max:100000
+}
+
+this.colorState={
+ACES:true,
+HDR:true,
+colorSpace:'ACEScg'
+}
+
+this.temporalBuffers={
+frameIndex:0,
+historyValid:false
+}
+
+this.memoryState={
+allocated:0,
+peak:0
+}
 
 this._rafId=0
 this._loopActive=false
 
 this._lastNow=0
-this._frameStart=0
-this._frameCPU=0
-this._frameGPU=0
 
-this._panic=false
 this._phase=FRAME_PHASE.BEGIN
 
-this._resizeObserver=null
-
 this._boundTick=this._tick.bind(this)
-this._boundResize=this._resize.bind(this)
-this._boundVisibility=this._visibility.bind(this)
 
 Object.seal(this)
 
@@ -120,16 +157,22 @@ if(this.initialized)return this
 
 this.state=ENGINE_STATE.INITIALIZING
 
-this._emit('init:start')
-
 this.renderer=new Renderer({...this.options,engine:this})
+
 this.pipeline=new CinematicRenderPipeline(this)
+
 this.sceneManager=new SceneManager({...this.options,engine:this})
+
 this.cameraSystem=new CameraSystem({...this.options,engine:this})
+
 this.systemManager=new SystemManager(this)
+
 this.scheduler=new TaskScheduler(this)
+
 this.memoryMonitor=new MemoryMonitor(this)
+
 this.assetManager=new AssetManager(this)
+
 this.environmentSystem=new EnvironmentSystem(this)
 
 await this.renderer.init?.()
@@ -141,7 +184,7 @@ await this.scheduler.init?.()
 await this.assetManager.init?.()
 await this.environmentSystem.init?.()
 
-this.performanceMonitor=new PerformanceMonitor({targetFPS:this.targetFPS,sampleInterval:0.25})
+this.performanceMonitor=new PerformanceMonitor({targetFPS:this.targetFPS})
 
 const rawRenderer=this.renderer.getRenderer?.()
 
@@ -149,31 +192,20 @@ if(rawRenderer){
 
 this.performanceScaler=new PerformanceScaler(rawRenderer,{
 targetFPS:this.targetFPS,
-minFPS:24,
+minFPS:12,
 maxScale:1,
-minScale:0.5
+minScale:0.25
 })
 
 this.performanceScaler.attachPipeline?.(this.pipeline)
-
-const size=this.renderer.getSize?.()
-
-if(size)this.performanceScaler.setSize(size.width,size.height)
 
 }
 
 this._buildExecutionGraph()
 
-this._installResize()
-this._installVisibility()
-
 this.initialized=true
-this.destroyed=false
-this.disposed=false
 
 this.state=ENGINE_STATE.INITIALIZED
-
-this._emit('init:complete')
 
 return this
 
@@ -193,56 +225,17 @@ this.executionGraph[this.executionGraphSize++]=this._phaseEnd.bind(this)
 
 }
 
-async start(){
+start(){
 
 if(this.running)return
 
-if(!this.initialized)await this.init()
-
 this.running=true
-this.paused=false
 
 this.clock.start()
 
 this._lastNow=performance.now()
 
 this._startLoop()
-
-this.state=ENGINE_STATE.RUNNING
-
-this._emit('start')
-
-}
-
-pause(){
-
-if(!this.running)return
-if(this.paused)return
-
-this.paused=true
-
-this.clock.stop()
-
-this.state=ENGINE_STATE.PAUSED
-
-this._emit('pause')
-
-}
-
-resume(){
-
-if(!this.running)return
-if(!this.paused)return
-
-this.paused=false
-
-this.clock.start()
-
-this._lastNow=performance.now()
-
-this.state=ENGINE_STATE.RUNNING
-
-this._emit('resume')
 
 }
 
@@ -261,8 +254,6 @@ return
 
 this._rafId=requestAnimationFrame(loop)
 
-if(this.paused)return
-
 this._tick(now)
 
 }
@@ -270,19 +261,7 @@ this._tick(now)
 this._rafId=requestAnimationFrame(loop)
 
 }
-
-_stopLoop(){
-
-cancelAnimationFrame(this._rafId)
-
-this._rafId=0
-
-this._loopActive=false
-
-}
   _tick(now){
-
-this._frameStart=now
 
 this.rawDelta=(now-this._lastNow)*0.001
 
@@ -290,36 +269,153 @@ this._lastNow=now
 
 if(!Number.isFinite(this.rawDelta))this.rawDelta=0
 
-if(this.rawDelta>this.maxDelta){
-this.rawDelta=this.maxDelta
-this._panic=true
-this._emit('panic',this.rawDelta)
+if(this.lockFPS){
+
+this.delta=this.frameInterval
+
+}else{
+
+this.delta=this.rawDelta
+
 }
 
-if(this.rawDelta<this.minDelta)this.rawDelta=this.minDelta
+this._updateCinematicClock()
 
-this.delta=this.rawDelta*this.timeScale
+this._updateTemporalState()
+
+this._solvePhysicalExposure()
 
 this._recordFrameTime(this.delta)
 
-this._stabilizeFrameTime()
-
-this.accumulator+=this.delta
-
 this._runExecutionGraph()
 
-this._frameCPU=(performance.now()-this._frameStart)*0.001
+this.time+=this.delta
 
 this.frame++
 
-this.time+=this.delta
+this.temporalBuffers.frameIndex++
+
+}
+
+_updateCinematicClock(){
+
+this.cinematicClock+=this.delta
+
+}
+
+_updateTemporalState(){
+
+const camera=this.cameraSystem?.getCamera?.()
+
+if(!camera)return
+
+this.temporalState.prevViewMatrix.copy(this.temporalState.viewMatrix)
+this.temporalState.prevProjectionMatrix.copy(this.temporalState.projectionMatrix)
+this.temporalState.prevViewProjectionMatrix.copy(this.temporalState.viewProjectionMatrix)
+this.temporalState.prevCameraPosition.copy(this.temporalState.cameraPosition)
+this.temporalState.prevJitter.copy(this.temporalState.jitter)
+
+this.temporalState.viewMatrix.copy(camera.matrixWorldInverse)
+
+this.temporalState.projectionMatrix.copy(camera.projectionMatrix)
+
+this.temporalState.viewProjectionMatrix.multiplyMatrices(
+this.temporalState.projectionMatrix,
+this.temporalState.viewMatrix
+)
+
+this.temporalState.cameraPosition.copy(camera.position)
+
+this._generateTemporalJitter()
+
+}
+
+_generateTemporalJitter(){
+
+const index=this.temporalBuffers.frameIndex%8
+
+const haltonX=this._halton(index,2)-0.5
+const haltonY=this._halton(index,3)-0.5
+
+this.temporalState.jitter.set(haltonX,haltonY)
+
+}
+
+_halton(index,base){
+
+let result=0
+let f=1/base
+let i=index
+
+while(i>0){
+
+result+=f*(i%base)
+
+i=Math.floor(i/base)
+
+f/=base
+
+}
+
+return result
+
+}
+
+_solvePhysicalExposure(){
+
+const c=this.cameraPhysical
+
+const aperture=c.aperture
+const shutter=c.shutterSpeed
+const ISO=c.ISO
+
+const ev=(aperture*aperture)/shutter*(100/ISO)
+
+const exposure=1/ev
+
+this.exposureState.target=Math.min(
+this.exposureState.max,
+Math.max(this.exposureState.min,exposure)
+)
+
+this.exposureState.current+=(
+this.exposureState.target-this.exposureState.current
+)*this.exposureState.adaptationRate*this.delta
+
+this.exposureHistory[this.exposureIndex]=this.exposureState.current
+
+this.exposureIndex++
+
+if(this.exposureIndex>=this.exposureHistory.length){
+this.exposureIndex=0
+}
+
+if(this.pipeline){
+
+this.pipeline.currentExposure=this.exposureState.current
+
+}
+
+}
+
+_recordFrameTime(dt){
+
+this.frameHistory[this.frameHistoryIndex]=dt
+
+this.frameHistoryIndex++
+
+if(this.frameHistoryIndex>=this.frameHistory.length){
+this.frameHistoryIndex=0
+}
 
 }
 
 _runExecutionGraph(){
 
 for(let i=0;i<this.executionGraphSize;i++){
+
 this.executionGraph[i]()
+
 }
 
 }
@@ -330,13 +426,15 @@ this._phase=FRAME_PHASE.BEGIN
 
 this.commandCount=0
 
-this._emit('frame:begin',this.delta)
+this._emit?.('frame:begin',this.delta)
 
 }
 
 _phaseFixed(){
 
 this._phase=FRAME_PHASE.FIXED
+
+this.accumulator+=this.delta
 
 let subSteps=0
 
@@ -345,10 +443,6 @@ while(this.accumulator>=this.fixedDelta){
 if(subSteps>=this.maxSubSteps){
 
 this.accumulator=0
-
-this._panic=true
-
-this._emit('panic:spiral')
 
 break
 
@@ -381,8 +475,6 @@ this.environmentSystem?.update?.(this.delta)
 this.cameraSystem?.update?.(this.delta)
 
 this.sceneManager?.update?.(this.delta,this.time,this.alpha)
-
-this._updateTemporalExposure()
 
 }
 
@@ -426,63 +518,13 @@ this._phase=FRAME_PHASE.POST_RENDER
 
 this._executeCommandQueue()
 
-this._emit('frame:rendered',this.delta)
-
 }
 
 _phaseEnd(){
 
 this._phase=FRAME_PHASE.END
 
-this._emit('frame:end',this.delta)
-
-this._panic=false
-
-}
-
-_recordFrameTime(dt){
-
-this.frameHistory[this.frameHistoryIndex]=dt
-
-this.frameHistoryIndex++
-
-if(this.frameHistoryIndex>=this.frameHistory.length){
-this.frameHistoryIndex=0
-}
-
-}
-
-_stabilizeFrameTime(){
-
-let sum=0
-
-const len=this.frameHistory.length
-
-for(let i=0;i<len;i++){
-sum+=this.frameHistory[i]
-}
-
-const avg=sum/len
-
-if(avg<=0)return
-
-const diff=this.delta-avg
-
-this.delta-=diff*0.1
-
-}
-
-_updateTemporalExposure(){
-
-const exposure=this.pipeline?.currentExposure||1
-
-this.exposureHistory[this.exposureIndex]=exposure
-
-this.exposureIndex++
-
-if(this.exposureIndex>=this.exposureHistory.length){
-this.exposureIndex=0
-}
+this.temporalBuffers.historyValid=true
 
 }
 
@@ -509,111 +551,106 @@ if(this.commandCount>=this.commandQueue.length)return
 this.commandQueue[this.commandCount++]=fn
 
 }
+  _executeGPUCommandBuffer(){
 
-getAverageFrameTime(){
+if(!this.commandCount)return
 
-let sum=0
+for(let i=0;i<this.commandCount;i++){
 
-for(let i=0;i<this.frameHistory.length;i++){
-sum+=this.frameHistory[i]
-}
+const cmd=this.commandQueue[i]
 
-return sum/this.frameHistory.length
+if(cmd){
 
-}
+try{
 
-getAverageExposure(){
+cmd()
 
-let sum=0
+}catch(e){
 
-for(let i=0;i<this.exposureHistory.length;i++){
-sum+=this.exposureHistory[i]
-}
-
-return sum/this.exposureHistory.length
-
-}
-  _resize(){
-
-const renderer=this.renderer
-
-if(!renderer)return
-
-renderer.resize?.()
-
-const size=renderer.getSize?.()
-
-if(size){
-
-this.pipeline?.resize?.(size.width,size.height)
-
-this.performanceScaler?.setSize?.(size.width,size.height)
-
-}
-
-this.enqueueCommand(()=>{
-
-this._emit('resize',size)
-
-})
-
-}
-
-_visibility(){
-
-if(document.visibilityState==='hidden'){
-
-this.pause()
-
-}else{
-
-this.resume()
-
-}
-
-this._emit('visibility',document.visibilityState)
-
-}
-
-_installResize(){
-
-window.addEventListener('resize',this._boundResize,{passive:true})
-
-const canvas=this.renderer?.getCanvas?.()
-
-if(canvas&&typeof ResizeObserver!=='undefined'){
-
-this._resizeObserver=new ResizeObserver(this._boundResize)
-
-this._resizeObserver.observe(canvas)
+console.warn('[GPU COMMAND ERROR]',e)
 
 }
 
 }
 
-_removeResize(){
+this.commandQueue[i]=null
 
-window.removeEventListener('resize',this._boundResize)
+}
 
-if(this._resizeObserver){
+this.commandCount=0
 
-this._resizeObserver.disconnect()
+}
 
-this._resizeObserver=null
+_allocateMemory(bytes){
+
+this.memoryState.allocated+=bytes
+
+if(this.memoryState.allocated>this.memoryState.peak){
+
+this.memoryState.peak=this.memoryState.allocated
 
 }
 
 }
 
-_installVisibility(){
+_freeMemory(bytes){
 
-document.addEventListener('visibilitychange',this._boundVisibility)
+this.memoryState.allocated-=bytes
+
+if(this.memoryState.allocated<0)this.memoryState.allocated=0
 
 }
 
-_removeVisibility(){
+_updateHDRState(){
 
-document.removeEventListener('visibilitychange',this._boundVisibility)
+if(!this.pipeline)return
+
+this.pipeline.currentExposure=this.exposureState.current
+
+this.pipeline.hdrEnabled=this.colorState.HDR
+
+this.pipeline.acesEnabled=this.colorState.ACES
+
+}
+
+_setCinematicCameraParameters(params={}){
+
+const c=this.cameraPhysical
+
+if(params.sensorWidth!==undefined)c.sensorWidth=params.sensorWidth
+if(params.sensorHeight!==undefined)c.sensorHeight=params.sensorHeight
+if(params.focalLength!==undefined)c.focalLength=params.focalLength
+if(params.aperture!==undefined)c.aperture=params.aperture
+if(params.shutterSpeed!==undefined)c.shutterSpeed=params.shutterSpeed
+if(params.ISO!==undefined)c.ISO=params.ISO
+if(params.focusDistance!==undefined)c.focusDistance=params.focusDistance
+if(params.shutterAngle!==undefined)c.shutterAngle=params.shutterAngle
+
+}
+
+_setCinematicFPS(fps){
+
+if(!Number.isFinite(fps))return
+
+this.targetFPS=fps
+
+this.frameInterval=1/fps
+
+}
+
+_setExecutionMode(mode){
+
+this.executionMode=mode
+
+}
+
+_phasePostRender(){
+
+this._phase=FRAME_PHASE.POST_RENDER
+
+this._executeGPUCommandBuffer()
+
+this._updateHDRState()
 
 }
 
@@ -625,13 +662,43 @@ this.running=false
 
 this.paused=false
 
-this.clock.stop()
+cancelAnimationFrame(this._rafId)
 
-this._stopLoop()
+this._rafId=0
+
+this._loopActive=false
+
+this.clock.stop()
 
 this.state=ENGINE_STATE.STOPPED
 
-this._emit('stop')
+this._emit?.('stop')
+
+}
+
+pause(){
+
+if(this.paused)return
+
+this.paused=true
+
+this.clock.stop()
+
+this._emit?.('pause')
+
+}
+
+resume(){
+
+if(!this.paused)return
+
+this.paused=false
+
+this.clock.start()
+
+this._lastNow=performance.now()
+
+this._emit?.('resume')
 
 }
 
@@ -641,13 +708,7 @@ if(this.destroyed)return
 
 this.state=ENGINE_STATE.SHUTTING_DOWN
 
-this._emit('shutdown:start')
-
 this.stop()
-
-this._removeResize()
-
-this._removeVisibility()
 
 await this._dispose(this.pipeline)
 await this._dispose(this.sceneManager)
@@ -660,15 +721,18 @@ await this._dispose(this.performanceScaler)
 await this._dispose(this.performanceMonitor)
 await this._dispose(this.renderer)
 
+this.commandQueue.fill(null)
+
+this.executionGraphSize=0
+
 this.initialized=false
 this.destroyed=true
-this.disposed=true
 
 Engine.instance=null
 
 this.state=ENGINE_STATE.DESTROYED
 
-this._emit('shutdown:complete')
+this._emit?.('shutdown')
 
 }
 
@@ -677,11 +741,10 @@ async restart(){
 await this.shutdown()
 
 this.destroyed=false
-this.disposed=false
 
 await this.init()
 
-await this.start()
+this.start()
 
 }
 
@@ -695,11 +758,7 @@ await system.dispose?.()
 
 }catch(e){
 
-if(this.debug){
-
-console.warn('[ENGINE DISPOSE ERROR]',e)
-
-}
+console.warn('[DISPOSE ERROR]',e)
 
 }
 
@@ -737,9 +796,7 @@ fn(data)
 
 }catch(e){
 
-if(this.debug){
-
-console.warn('[ENGINE EVENT ERROR]',e)
+console.warn('[EVENT ERROR]',e)
 
 }
 
@@ -747,34 +804,44 @@ console.warn('[ENGINE EVENT ERROR]',e)
 
 }
 
-}
+getCinematicExposure(){
 
-setTimeScale(scale){
-
-if(!Number.isFinite(scale))return
-
-this.timeScale=Math.max(0,scale)
-
-this._emit('timescale',this.timeScale)
+return this.exposureState.current
 
 }
 
-getRenderer(){return this.renderer}
-getPipeline(){return this.pipeline}
-getScene(){return this.sceneManager?.getScene?.()}
-getCamera(){return this.cameraSystem?.getCamera?.()}
-getFrame(){return this.frame}
-getTime(){return this.time}
-getDelta(){return this.delta}
-getAlpha(){return this.alpha}
-getFPS(){return this.performanceMonitor?.getFPS?.()||0}
-getExposure(){return this.pipeline?.currentExposure||1}
-getAverageExposure(){return this.getAverageExposure?.()}
-getState(){return this.state}
+getPhysicalCamera(){
+
+return this.cameraPhysical
+
+}
+
+getTemporalState(){
+
+return this.temporalState
+
+}
+
+getMemoryStats(){
+
+return{
+allocated:this.memoryState.allocated,
+peak:this.memoryState.peak
+}
+
+}
+
+getFrameStats(){
+
+return{
+frame:this.frame,
+time:this.time,
+delta:this.delta,
+fps:1/this.delta
+}
+
+}
+
 isRunning(){return this.running}
-isPaused(){return this.paused}
 isInitialized(){return this.initialized}
 isDestroyed(){return this.destroyed}
-isDisposed(){return this.disposed}
-
-}
