@@ -1,9 +1,15 @@
 import * as THREE from 'https://jspm.dev/three'
 import {Renderer} from '../renderer/Renderer.js'
+import {RenderPipeline} from '../renderer/RenderPipeline.js'
 import {SceneManager} from '../scene/SceneManager.js'
 import {CameraSystem} from '../camera/CameraSystem.js'
 import {PerformanceMonitor} from '../systems/PerformanceMonitor.js'
 import {PerformanceScaler} from '../systems/PerformanceScaler.js'
+import {SystemManager} from '../systems/SystemManager.js'
+import {TaskScheduler} from '../systems/TaskScheduler.js'
+import {MemoryMonitor} from '../systems/MemoryMonitor.js'
+import {AssetManager} from '../assets/AssetManager.js'
+import {EnvironmentSystem} from '../world/EnvironmentSystem.js'
 
 const ENGINE_STATE={
 CONSTRUCTED:0,
@@ -18,7 +24,22 @@ DESTROYED:7
 
 export class Engine{
 
+static instance=null
+
+static getInstance(options){
+if(!Engine.instance){
+Engine.instance=new Engine(options)
+}
+return Engine.instance
+}
+
 constructor(options={}){
+
+if(Engine.instance){
+return Engine.instance
+}
+
+Engine.instance=this
 
 this.options=options||{}
 this.debug=options.debug===true
@@ -41,8 +62,16 @@ this.maxDelta=0.05
 this.minDelta=0.000001
 
 this.renderer=null
+this.pipeline=null
 this.sceneManager=null
 this.cameraSystem=null
+
+this.systemManager=null
+this.scheduler=null
+this.memoryMonitor=null
+this.assetManager=null
+this.environmentSystem=null
+
 this.performanceMonitor=null
 this.performanceScaler=null
 
@@ -77,22 +106,30 @@ this.state=ENGINE_STATE.INITIALIZING
 
 this._emit('init:start')
 
-this.renderer=new Renderer({
-...this.options,
-engine:this
-})
+this.renderer=new Renderer({...this.options,engine:this})
 
-this.cameraSystem=new CameraSystem({
-...this.options,
-engine:this
-})
+this.pipeline=new RenderPipeline(this)
 
-this.sceneManager=new SceneManager({
-...this.options,
-engine:this
-})
+this.cameraSystem=new CameraSystem({...this.options,engine:this})
 
-await this.sceneManager.init?.()
+this.sceneManager=new SceneManager({...this.options,engine:this})
+
+this.environmentSystem=new EnvironmentSystem(this)
+
+this.systemManager=new SystemManager(this)
+
+this.scheduler=new TaskScheduler(this)
+
+this.memoryMonitor=new MemoryMonitor(this)
+
+this.assetManager=new AssetManager(this)
+
+await this.pipeline?.init?.()
+await this.sceneManager?.init?.()
+await this.environmentSystem?.init?.()
+await this.systemManager?.init?.()
+await this.scheduler?.init?.()
+await this.assetManager?.init?.()
 
 this.performanceMonitor=new PerformanceMonitor({
 targetFPS:60,
@@ -113,22 +150,13 @@ minScale:0.5
 }
 )
 
-const pipeline=this.renderer.pipeline
-
-if(pipeline){
-
-this.performanceScaler.attachPipeline(pipeline)
+this.performanceScaler.attachPipeline?.(this.pipeline)
 
 const size=this.renderer.getSize?.()
 
 if(size){
 
-this.performanceScaler.setSize(
-size.width,
-size.height
-)
-
-}
+this.performanceScaler.setSize(size.width,size.height)
 
 }
 
@@ -158,9 +186,7 @@ if(this.destroyed)return
 if(this.running)return
 
 if(!this.initialized){
-
 await this.init()
-
 }
 
 this.running=true
@@ -219,10 +245,8 @@ this._loopActive=true
 const loop=(now)=>{
 
 if(!this.running){
-
 this._loopActive=false
 return
-
 }
 
 this._rafId=requestAnimationFrame(loop)
@@ -240,11 +264,8 @@ this._rafId=requestAnimationFrame(loop)
 _stopLoop(){
 
 if(this._rafId){
-
 cancelAnimationFrame(this._rafId)
-
 this._rafId=0
-
 }
 
 this._loopActive=false
@@ -268,37 +289,27 @@ this.frame++
 
 this._emit('frame:start',delta)
 
-this._update(delta)
+this.scheduler?.update?.(delta)
+
+this.systemManager?.update?.(delta)
+
+this.environmentSystem?.update?.(delta)
+
+this.cameraSystem?.update?.(delta)
+
+this.sceneManager?.update?.(delta,this.time)
+
+const fps=this.performanceMonitor?.update?.(delta)
+
+this.performanceScaler?.update?.(fps,delta)
+
+this.memoryMonitor?.update?.(delta)
 
 this._emit('frame:update',delta)
 
 this._render(delta)
 
-this._emit('frame:render',delta)
-
 this._emit('frame:end',delta)
-
-}
-
-_update(delta){
-
-this.cameraSystem?.update?.(delta)
-
-this.sceneManager?.update?.(
-delta,
-this.time
-)
-
-if(this.performanceMonitor){
-
-const fps=this.performanceMonitor.update(delta)
-
-this.performanceScaler?.update?.(
-fps,
-delta
-)
-
-}
 
 }
 
@@ -310,7 +321,15 @@ const camera=this.cameraSystem?.getCamera?.()
 
 if(!renderer||!scene||!camera)return
 
+if(this.pipeline?.render){
+
+this.pipeline.render(renderer,scene,camera,this.delta)
+
+}else{
+
 renderer.render(scene,camera)
+
+}
 
 }
 
@@ -347,17 +366,16 @@ this.stop()
 this._removeResize()
 this._removeVisibility()
 
+await this._dispose(this.assetManager)
+await this._dispose(this.scheduler)
+await this._dispose(this.systemManager)
+await this._dispose(this.environmentSystem)
+await this._dispose(this.pipeline)
 await this._dispose(this.sceneManager)
 await this._dispose(this.cameraSystem)
 await this._dispose(this.renderer)
 await this._dispose(this.performanceScaler)
 await this._dispose(this.performanceMonitor)
-
-this.sceneManager=null
-this.cameraSystem=null
-this.renderer=null
-this.performanceScaler=null
-this.performanceMonitor=null
 
 this.initialized=false
 this.destroyed=true
@@ -389,15 +407,11 @@ async _dispose(system){
 if(!system)return
 
 try{
-
-system?.dispose?.()
-
+await system?.dispose?.()
 }catch(e){
 
 if(this.debug){
-
 console.warn('[ENGINE DISPOSE ERROR]',e)
-
 }
 
 }
@@ -425,19 +439,13 @@ this._emit('resize')
 
 _installResize(){
 
-window.addEventListener(
-'resize',
-this._boundResize,
-{passive:true}
-)
+window.addEventListener('resize',this._boundResize,{passive:true})
 
 const canvas=this.renderer?.getCanvas?.()
 
 if(canvas&&typeof ResizeObserver!=='undefined'){
 
-this._resizeObserver=new ResizeObserver(
-this._boundResize
-)
+this._resizeObserver=new ResizeObserver(this._boundResize)
 
 this._resizeObserver.observe(canvas)
 
@@ -447,10 +455,7 @@ this._resizeObserver.observe(canvas)
 
 _removeResize(){
 
-window.removeEventListener(
-'resize',
-this._boundResize
-)
+window.removeEventListener('resize',this._boundResize)
 
 this._resizeObserver?.disconnect?.()
 
@@ -461,46 +466,31 @@ this._resizeObserver=null
 _handleVisibility(){
 
 if(document.visibilityState==='hidden'){
-
 this.pause()
-
 }else{
-
 this.resume()
-
 }
 
-this._emit(
-'visibility',
-document.visibilityState
-)
+this._emit('visibility',document.visibilityState)
 
 }
 
 _installVisibility(){
 
-document.addEventListener(
-'visibilitychange',
-this._boundVisibility
-)
+document.addEventListener('visibilitychange',this._boundVisibility)
 
 }
 
 _removeVisibility(){
 
-document.removeEventListener(
-'visibilitychange',
-this._boundVisibility
-)
+document.removeEventListener('visibilitychange',this._boundVisibility)
 
 }
 
 on(event,callback){
 
 if(!this._listeners.has(event)){
-
 this._listeners.set(event,new Set())
-
 }
 
 const set=this._listeners.get(event)
@@ -520,15 +510,11 @@ if(!set)return
 for(const cb of set){
 
 try{
-
 cb(data)
-
 }catch(e){
 
 if(this.debug){
-
 console.warn('[ENGINE EVENT ERROR]',e)
-
 }
 
 }
@@ -537,76 +523,17 @@ console.warn('[ENGINE EVENT ERROR]',e)
 
 }
 
-getRenderer(){
-
-return this.renderer
-
-}
-
-getScene(){
-
-return this.sceneManager?.getScene?.()
-
-}
-
-getCamera(){
-
-return this.cameraSystem?.getCamera?.()
-
-}
-
-getPerformance(){
-
-return this.performanceMonitor?.getMetrics?.()
-
-}
-
-getScale(){
-
-return this.performanceScaler?.getScale?.()??1
-
-}
-
-getTime(){
-
-return this.time
-
-}
-
-getFrame(){
-
-return this.frame
-
-}
-
-isRunning(){
-
-return this.running
-
-}
-
-isPaused(){
-
-return this.paused
-
-}
-
-isInitialized(){
-
-return this.initialized
-
-}
-
-isDestroyed(){
-
-return this.destroyed
-
-}
-
-getState(){
-
-return this.state
-
-}
+getRenderer(){return this.renderer}
+getScene(){return this.sceneManager?.getScene?.()}
+getCamera(){return this.cameraSystem?.getCamera?.()}
+getPerformance(){return this.performanceMonitor?.getMetrics?.()}
+getScale(){return this.performanceScaler?.getScale?.()??1}
+getTime(){return this.time}
+getFrame(){return this.frame}
+getState(){return this.state}
+isRunning(){return this.running}
+isPaused(){return this.paused}
+isInitialized(){return this.initialized}
+isDestroyed(){return this.destroyed}
 
 }
