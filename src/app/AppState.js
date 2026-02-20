@@ -1,167 +1,322 @@
 import {EventEmitter} from '../utils/EventEmitter.js'
+import {StateMachine} from '../utils/StateMachine.js'
+
+export const AppPhase=Object.freeze({
+CREATED:0,
+BOOTSTRAPPING:1,
+BOOTSTRAPPED:2,
+INITIALIZING:3,
+INITIALIZED:4,
+STARTING:5,
+RUNNING:6,
+PAUSED:7,
+RESUMING:8,
+STOPPING:9,
+STOPPED:10,
+SHUTTING_DOWN:11,
+SHUTDOWN:12,
+ERROR:13,
+DESTROYED:14
+})
+
 export class AppState extends EventEmitter{
-constructor(initialState={}){
+
+constructor(app){
+
 super()
-this._state=Object.create(null)
-this._previous=Object.create(null)
-this._changed=new Set()
-this._version=0
-this._frozen=false
-this._schemas=new Map()
-this._validators=new Map()
-this._computed=new Map()
-this._computedCache=new Map()
-this._computedDirty=new Set()
-this._batchDepth=0
-this._batchChanges=new Set()
-if(initialState&&typeof initialState==='object'){
-this.merge(initialState)
-this.clearChanges()
+
+this.app=app
+
+this.phase=AppPhase.CREATED
+this.previousPhase=null
+
+this.frame=0
+this.time=0
+this.delta=0
+
+this.running=false
+this.paused=false
+this.initialized=false
+this.destroyed=false
+this.bootstrapped=false
+
+this.visibility=true
+this.focus=true
+
+this.metrics={
+fps:0,
+frameTime:0,
+memory:0,
+cpu:0,
+gpu:0
 }
+
+this._machine=new StateMachine({context:this})
+
+this._configureStateMachine()
+
 }
-get version(){
-return this._version
+
+_configureStateMachine(){
+
+this._machine.addState('created',{
+onEnter:()=>this._setPhase(AppPhase.CREATED)
+})
+
+this._machine.addState('bootstrapping',{
+onEnter:()=>this._setPhase(AppPhase.BOOTSTRAPPING)
+})
+
+this._machine.addState('bootstrapped',{
+onEnter:()=>{
+this.bootstrapped=true
+this._setPhase(AppPhase.BOOTSTRAPPED)
 }
-has(key){
-return key in this._state||this._computed.has(key)
+})
+
+this._machine.addState('initializing',{
+onEnter:()=>this._setPhase(AppPhase.INITIALIZING)
+})
+
+this._machine.addState('initialized',{
+onEnter:()=>{
+this.initialized=true
+this._setPhase(AppPhase.INITIALIZED)
 }
-get(key){
-if(this._computed.has(key)){
-if(this._computedDirty.has(key)||!this._computedCache.has(key)){
-const fn=this._computed.get(key)
-const value=fn(this)
-this._computedCache.set(key,value)
-this._computedDirty.delete(key)
+})
+
+this._machine.addState('starting',{
+onEnter:()=>this._setPhase(AppPhase.STARTING)
+})
+
+this._machine.addState('running',{
+onEnter:()=>{
+this.running=true
+this.paused=false
+this._setPhase(AppPhase.RUNNING)
 }
-return this._computedCache.get(key)
+})
+
+this._machine.addState('paused',{
+onEnter:()=>{
+this.paused=true
+this.running=false
+this._setPhase(AppPhase.PAUSED)
 }
-return this._state[key]
+})
+
+this._machine.addState('resuming',{
+onEnter:()=>this._setPhase(AppPhase.RESUMING)
+})
+
+this._machine.addState('stopping',{
+onEnter:()=>this._setPhase(AppPhase.STOPPING)
+})
+
+this._machine.addState('stopped',{
+onEnter:()=>{
+this.running=false
+this._setPhase(AppPhase.STOPPED)
 }
-set(key,value){
-if(this._frozen)throw new Error('AppState is frozen')
-const old=this._state[key]
-if(old===value)return false
-this._previous[key]=old
-this._state[key]=value
-this._changed.add(key)
-this._computedDirty.forEach(k=>{})
-this._version++
-if(this._batchDepth>0){
-this._batchChanges.add(key)
-}else{
-this.emit('change',{key,value,previous:old,version:this._version})
-this.emit(`change:${key}`,value,old,this._version)
+})
+
+this._machine.addState('shutting_down',{
+onEnter:()=>this._setPhase(AppPhase.SHUTTING_DOWN)
+})
+
+this._machine.addState('shutdown',{
+onEnter:()=>this._setPhase(AppPhase.SHUTDOWN)
+})
+
+this._machine.addState('error',{
+onEnter:()=>this._setPhase(AppPhase.ERROR)
+})
+
+this._machine.addState('destroyed',{
+onEnter:()=>{
+this.destroyed=true
+this.running=false
+this._setPhase(AppPhase.DESTROYED)
 }
-return true
+})
+
+this._machine.setState('created')
+
 }
-merge(object){
-if(this._frozen)throw new Error('AppState is frozen')
-this.beginBatch()
-for(const key in object){
-this.set(key,object[key])
+
+_setPhase(newPhase){
+
+if(this.phase===newPhase)return
+
+this.previousPhase=this.phase
+this.phase=newPhase
+
+this.emit('phase',newPhase,this.previousPhase)
+
 }
-this.endBatch()
+
+bootstrap(){
+
+this._machine.setState('bootstrapping')
+this._machine.setState('bootstrapped')
+
 }
-remove(key){
-if(this._frozen)throw new Error('AppState is frozen')
-if(!(key in this._state))return false
-const old=this._state[key]
-delete this._state[key]
-this._previous[key]=old
-this._changed.add(key)
-this._version++
-this.emit('remove',{key,previous:old,version:this._version})
-this.emit(`remove:${key}`,old,this._version)
-return true
+
+initialize(){
+
+this._machine.setState('initializing')
+this._machine.setState('initialized')
+
 }
-clear(){
-if(this._frozen)throw new Error('AppState is frozen')
-this.beginBatch()
-for(const key in this._state){
-this.remove(key)
+
+start(){
+
+this._machine.setState('starting')
+this._machine.setState('running')
+
 }
-this.endBatch()
+
+pause(){
+
+if(this.paused)return
+this._machine.setState('paused')
+
 }
-keys(){
-return Object.keys(this._state)
+
+resume(){
+
+this._machine.setState('resuming')
+this._machine.setState('running')
+
 }
-values(){
-return Object.values(this._state)
+
+stop(){
+
+this._machine.setState('stopping')
+this._machine.setState('stopped')
+
 }
-entries(){
-return Object.entries(this._state)
+
+shutdown(){
+
+this._machine.setState('shutting_down')
+this._machine.setState('shutdown')
+
 }
-snapshot(){
-return Object.freeze({...this._state})
-}
-previous(key){
-return this._previous[key]
-}
-changed(key){
-if(key)return this._changed.has(key)
-return this._changed.size>0
-}
-clearChanges(){
-this._changed.clear()
-this._previous=Object.create(null)
-}
-beginBatch(){
-this._batchDepth++
-}
-endBatch(){
-if(this._batchDepth===0)return
-this._batchDepth--
-if(this._batchDepth===0&&this._batchChanges.size>0){
-const keys=[...this._batchChanges]
-this._batchChanges.clear()
-this.emit('batchChange',{keys,version:this._version})
-}
-}
-freeze(){
-this._frozen=true
-this.emit('freeze')
-}
-unfreeze(){
-this._frozen=false
-this.emit('unfreeze')
-}
-defineSchema(key,validator){
-this._schemas.set(key,validator)
-}
-defineValidator(key,validator){
-this._validators.set(key,validator)
-}
-validate(key,value){
-if(this._validators.has(key)){
-return this._validators.get(key)(value,this)
-}
-if(this._schemas.has(key)){
-return this._schemas.get(key)(value,this)
-}
-return true
-}
-compute(key,fn){
-if(typeof fn!=='function')throw new Error('Computed must be function')
-this._computed.set(key,fn)
-this._computedDirty.add(key)
-}
-invalidate(key){
-if(this._computed.has(key)){
-this._computedDirty.add(key)
-}
-}
-toJSON(){
-return this.snapshot()
-}
+
 destroy(){
+
+this._machine.setState('destroyed')
 this.removeAllListeners()
-this._state=Object.create(null)
-this._previous=Object.create(null)
-this._changed.clear()
-this._computed.clear()
-this._computedCache.clear()
-this._computedDirty.clear()
-this._schemas.clear()
-this._validators.clear()
+this.app=null
+
 }
+
+error(err){
+
+this.lastError=err
+this.emit('error',err)
+this._machine.setState('error')
+
+}
+
+step(delta,time){
+
+this.delta=delta
+this.time=time
+this.frame++
+
+this.metrics.frameTime=delta
+
+this.emit('step',delta,time,this.frame)
+
+}
+
+setVisibility(visible){
+
+this.visibility=visible
+
+this.emit('visibility',visible)
+
+}
+
+setFocus(focus){
+
+this.focus=focus
+
+this.emit('focus',focus)
+
+}
+
+setFPS(fps){
+
+this.metrics.fps=fps
+
+}
+
+setMemory(bytes){
+
+this.metrics.memory=bytes
+
+}
+
+setCPU(ms){
+
+this.metrics.cpu=ms
+
+}
+
+setGPU(ms){
+
+this.metrics.gpu=ms
+
+}
+
+isRunning(){
+
+return this.phase===AppPhase.RUNNING
+
+}
+
+isPaused(){
+
+return this.phase===AppPhase.PAUSED
+
+}
+
+isInitialized(){
+
+return this.initialized
+
+}
+
+isDestroyed(){
+
+return this.destroyed
+
+}
+
+getPhase(){
+
+return this.phase
+
+}
+
+getMetrics(){
+
+return this.metrics
+
+}
+
+reset(){
+
+this.frame=0
+this.time=0
+this.delta=0
+
+this.metrics.fps=0
+this.metrics.frameTime=0
+
+}
+
 }
