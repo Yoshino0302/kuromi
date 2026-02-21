@@ -1831,7 +1831,7 @@ this.background=new THREE.Color(0,0,0)
 trace(ray){
 const radiance=new THREE.Color(0,0,0)
 const throughput=new THREE.Color(1,1,1)
-const hit=new PTHit()
+const hit=new PTHit()  for(let depth=0;depth<this.maxDepth;depth++){
 let currentRay=ray.clone()
 for(let bounce=0;bounce<this.maxBounces;bounce++){
 hit.reset()
@@ -2190,7 +2190,7 @@ _traceLambda(ray,lambda){
 let radiance=0
 let throughput=1
 
-const hit=new PTHit()
+const hit=new PTHit()  for(let depth=0;depth<this.maxDepth;depth++){
 let currentRay=ray.clone()
 
 for(let bounce=0;bounce<this.maxBounces;bounce++){
@@ -2310,9 +2310,11 @@ this.probes.length=0
 for(let x=0;x<this.resolution;x++){
 for(let y=0;y<this.resolution;y++){
 for(let z=0;z<this.resolution;z++){
-const fx=x/(this.resolution-1)
-const fy=y/(this.resolution-1)
-const fz=z/(this.resolution-1)
+const denom=Math.max(1,this.resolution-1)
+
+const fx=x/denom
+const fy=y/denom
+const fz=z/denom
 const pos=new THREE.Vector3(
 THREE.MathUtils.lerp(this.boundsMin.x,this.boundsMax.x,fx),
 THREE.MathUtils.lerp(this.boundsMin.y,this.boundsMax.y,fy),
@@ -2383,7 +2385,7 @@ return gi.multiplyScalar(NdotL*this.indirectStrength)
 
 trace(ray){
 
-const hit=new PTHit()
+const hit=new PTHit()  for(let depth=0;depth<this.maxDepth;depth++){
 
 if(!this.scene.intersect(ray,hit)){
 return new THREE.Color(0,0,0)
@@ -3706,7 +3708,7 @@ throughput.distribution.setUniform(1)
 
 let currentRay=ray.clone()
 
-const hit=new PTHit()
+const hit=new PTHit()  for(let depth=0;depth<this.maxDepth;depth++){
 
 for(let bounce=0;bounce<this.maxBounces;bounce++){
 
@@ -3892,7 +3894,7 @@ this.maxBounces=12
 
 this.sampler=new PTSampler(999)
 
-this.sceneAccel=new PTScene(scene)
+if(this.sceneAccel.intersect(ray,hit)){
 
 this.spectral=new PTSpectralIntegrator(scene)
 
@@ -3908,7 +3910,7 @@ const state=new PTHybridPathState()
 
 state.reset(ray)
 
-const hit=new PTHit()
+const hit=new PTHit()  for(let depth=0;depth<this.maxDepth;depth++){
 
 while(!state.done){
 
@@ -5357,12 +5359,48 @@ this.camera=camera
 this.width=width
 this.height=height
 
+if(!this.rendererBridge){
+throw new Error("rendererBridge missing")
+}
+
 this.rendererBridge.initialize(
 scene,
 camera,
 width,
 height
 )
+
+this.outputData=new Float32Array(width*height*4)
+
+resize(width,height){
+
+if(width<=0||height<=0)return
+
+this.width=width
+this.height=height
+
+this.rendererBridge.resize(width,height)
+
+if(this.outputTexture){
+this.outputTexture.dispose()
+this.outputTexture=null
+}
+
+this.outputData=new Float32Array(width*height*4)
+
+resize(width,height){
+
+if(width<=0||height<=0)return
+
+this.width=width
+this.height=height
+
+this.rendererBridge.resize(width,height)
+
+if(this.outputTexture){
+this.outputTexture.dispose()
+this.outputTexture=null
+}
 
 this.outputData=new Float32Array(width*height*4)
 
@@ -5374,6 +5412,11 @@ THREE.RGBAFormat,
 THREE.FloatType
 )
 
+this.outputTexture.needsUpdate=true
+}
+
+this.outputTexture.needsUpdate=true
+}
 this.outputTexture.needsUpdate=true
 
 this.initialized=true
@@ -5414,7 +5457,10 @@ this.camera
 
 if(buffer){
 
+if(buffer&&buffer.length===this.outputData.length){
 this.outputData.set(buffer)
+this.outputTexture.needsUpdate=true
+}
 
 this.outputTexture.needsUpdate=true
 
@@ -5426,7 +5472,8 @@ this.frame++
 
 resolve(){
 
-return this.rendererBridge.resolve()
+if(!this.rendererBridge)return null
+return this.rendererBridge.resolve?.()
 
 }
 
@@ -5688,7 +5735,7 @@ this.lightPath=new PTBDPTPath(this.maxDepth)
 
 this.sampler=new PTBDPTSampler()
 
-this.sceneAccel=new PTScene(scene)
+if(this.sceneAccel.intersect(ray,hit)){
 
 }
 
@@ -5700,7 +5747,7 @@ let currentRay=ray.clone()
 
 let throughput=new THREE.Color(1,1,1)
 
-const hit=new PTHit()
+const hit=new PTHit()  for(let depth=0;depth<this.maxDepth;depth++){
 
 for(let depth=0;depth<this.maxDepth;depth++){
 
@@ -5750,7 +5797,7 @@ this.sampleDirection(light.normal)
 
 let throughput=light.emission.clone()
 
-const hit=new PTHit()
+const hit=new PTHit()  for(let depth=0;depth<this.maxDepth;depth++){
 
 for(let depth=0;depth<this.maxDepth;depth++){
 
@@ -6263,7 +6310,7 @@ this.scene=scene
 
 this.sampler=new PTSampler(9191)
 
-this.sceneAccel=new PTScene(scene)
+if(this.sceneAccel.intersect(ray,hit)){
 
 }
 
@@ -6308,7 +6355,7 @@ photon.position.clone(),
 photon.direction.clone()
 )
 
-const hit=new PTHit()
+const hit=new PTHit()  for(let depth=0;depth<this.maxDepth;depth++){
 
 let power=photon.power.clone()
 
@@ -6602,7 +6649,7 @@ constructor(scene){
 
 this.scene=scene
 
-this.sceneAccel=new PTScene(scene)
+if(this.sceneAccel.intersect(ray,hit)){
 
 this.spectrum=new PTDispersionSpectrum()
 
@@ -6635,7 +6682,7 @@ return result
 
 traceWavelength(ray,sample){
 
-const hit=new PTHit()
+const hit=new PTHit()  for(let depth=0;depth<this.maxDepth;depth++){
 
 if(!this.sceneAccel.intersect(ray,hit)){
 
@@ -6887,7 +6934,7 @@ constructor(scene){
 
 this.scene=scene
 
-this.sceneAccel=new PTScene(scene)
+if(this.sceneAccel.intersect(ray,hit)){
 
 this.sampler=new PTSampler(6060)
 
@@ -6897,7 +6944,7 @@ this.samples=4
 
 evaluate(ray){
 
-const hit=new PTHit()
+const hit=new PTHit()  for(let depth=0;depth<this.maxDepth;depth++){
 
 if(!this.sceneAccel.intersect(ray,hit)){
 
@@ -7088,7 +7135,7 @@ constructor(scene){
 
 this.scene=scene
 
-this.sceneAccel=new PTScene(scene)
+if(this.sceneAccel.intersect(ray,hit)){
 
 this.sampler=new PTSampler(4242)
 
@@ -7112,7 +7159,7 @@ new THREE.Color(1,1,1)
 
 for(let depth=0;depth<this.maxDepth;depth++){
 
-const hit=new PTHit()
+const hit=new PTHit()  for(let depth=0;depth<this.maxDepth;depth++){
 
 if(!this.sceneAccel.intersect(
 new PTRay(ray.origin,ray.direction),
@@ -7412,9 +7459,9 @@ this.sampleCount++
 const delta=sample.clone().sub(this.mean)
 
 this.mean.add(
-delta.clone().multiplyScalar(
-1/this.sampleCount
-)
+const invCount=this.sampleCount>0?1/this.sampleCount:0
+
+delta.clone().multiplyScalar(invCount)
 )
 
 const delta2=sample.clone().sub(this.mean)
@@ -8109,7 +8156,7 @@ constructor(scene){
 
 this.scene=scene
 
-this.sceneAccel=new PTScene(scene)
+if(this.sceneAccel.intersect(ray,hit)){
 
 this.medium=new PTVolumeMedium()
 
@@ -8418,7 +8465,7 @@ color.add(
 this.dispersion.trace(ray)
 )
 
-const hit=new PTHit()
+const hit=new PTHit()  for(let depth=0;depth<this.maxDepth;depth++){
 
 const sceneAccel=new PTScene(this.scene)
 
