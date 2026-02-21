@@ -17,6 +17,17 @@ const EXECUTION_MODE={CPU_PRIORITY:0,GPU_PRIORITY:1,CINEMATIC_PRIORITY:2}
 
 const FRAME_PHASE={BEGIN:0,FIXED:1,UPDATE:2,PRE_RENDER:3,RENDER:4,POST_RENDER:5,END:6}
 
+const HALTON_2_3=new Float32Array([
+0.5,0.333333,
+0.25,0.666667,
+0.75,0.111111,
+0.125,0.444444,
+0.625,0.777778,
+0.375,0.222222,
+0.875,0.555556,
+0.0625,0.888889
+])
+
 export class Engine{
 
 static instance=null
@@ -41,12 +52,8 @@ this.cinematic=true
 
 this.clock=new THREE.Clock(false)
 
-this.cinematicClock=0
-
 this.targetFPS=options.targetFPS||23.976
-
 this.frameInterval=1/this.targetFPS
-
 this.lockFPS=true
 
 this.time=0
@@ -57,7 +64,7 @@ this.alpha=0
 
 this.accumulator=0
 this.fixedDelta=1/60
-this.maxSubSteps=4
+this.maxSubSteps=8
 
 this.running=false
 this.paused=false
@@ -79,15 +86,15 @@ this.performanceScaler=null
 this.executionGraph=new Array(32)
 this.executionGraphSize=0
 
-this.commandQueue=new Array(4096)
+this.commandQueue=new Array(8192)
 this.commandCount=0
 
 this.listeners=new Map()
 
-this.frameHistory=new Float32Array(256)
+this.frameHistory=new Float32Array(512)
 this.frameHistoryIndex=0
 
-this.exposureHistory=new Float32Array(256)
+this.exposureHistory=new Float32Array(512)
 this.exposureIndex=0
 
 this.temporalState={
@@ -117,8 +124,8 @@ shutterAngle:180
 this.exposureState={
 current:1,
 target:1,
-adaptationRate:1.5,
-min:0.0001,
+adaptationRate:1.2,
+min:0.00001,
 max:100000
 }
 
@@ -140,9 +147,7 @@ peak:0
 
 this._rafId=0
 this._loopActive=false
-
 this._lastNow=0
-
 this._phase=FRAME_PHASE.BEGIN
 
 this._boundTick=this._tick.bind(this)
@@ -150,29 +155,20 @@ this._boundTick=this._tick.bind(this)
 Object.seal(this)
 
 }
-
-async init(){
+  async init(){
 
 if(this.initialized)return this
 
 this.state=ENGINE_STATE.INITIALIZING
 
 this.renderer=new Renderer({...this.options,engine:this})
-
 this.pipeline=new CinematicRenderPipeline(this)
-
 this.sceneManager=new SceneManager({...this.options,engine:this})
-
 this.cameraSystem=new CameraSystem({...this.options,engine:this})
-
 this.systemManager=new SystemManager(this)
-
 this.scheduler=new TaskScheduler(this)
-
 this.memoryMonitor=new MemoryMonitor(this)
-
 this.assetManager=new AssetManager(this)
-
 this.environmentSystem=new EnvironmentSystem(this)
 
 await this.renderer.init?.()
@@ -204,8 +200,9 @@ this.performanceScaler.attachPipeline?.(this.pipeline)
 this._buildExecutionGraph()
 
 this.initialized=true
-
 this.state=ENGINE_STATE.INITIALIZED
+
+this._emit('initialized',this)
 
 return this
 
@@ -213,15 +210,17 @@ return this
 
 _buildExecutionGraph(){
 
-this.executionGraphSize=0
+let i=0
 
-this.executionGraph[this.executionGraphSize++]=this._phaseBegin.bind(this)
-this.executionGraph[this.executionGraphSize++]=this._phaseFixed.bind(this)
-this.executionGraph[this.executionGraphSize++]=this._phaseUpdate.bind(this)
-this.executionGraph[this.executionGraphSize++]=this._phasePreRender.bind(this)
-this.executionGraph[this.executionGraphSize++]=this._phaseRender.bind(this)
-this.executionGraph[this.executionGraphSize++]=this._phasePostRender.bind(this)
-this.executionGraph[this.executionGraphSize++]=this._phaseEnd.bind(this)
+this.executionGraph[i++]=this._phaseBegin.bind(this)
+this.executionGraph[i++]=this._phaseFixed.bind(this)
+this.executionGraph[i++]=this._phaseUpdate.bind(this)
+this.executionGraph[i++]=this._phasePreRender.bind(this)
+this.executionGraph[i++]=this._phaseRender.bind(this)
+this.executionGraph[i++]=this._phasePostRender.bind(this)
+this.executionGraph[i++]=this._phaseEnd.bind(this)
+
+this.executionGraphSize=i
 
 }
 
@@ -229,13 +228,22 @@ start(){
 
 if(this.running)return
 
+if(!this.initialized)throw new Error('Engine not initialized')
+
 this.running=true
+this.paused=false
 
 this.clock.start()
 
 this._lastNow=performance.now()
 
-this._startLoop()
+this.state=ENGINE_STATE.RUNNING
+
+this._loopActive=true
+
+requestAnimationFrame(this._boundTick)
+
+this._emit('start')
 
 }
 
@@ -245,29 +253,27 @@ if(this._loopActive)return
 
 this._loopActive=true
 
-const loop=(now)=>{
+requestAnimationFrame(this._boundTick)
+
+}
+
+_tick(now){
 
 if(!this.running){
+
 this._loopActive=false
 return
-}
-
-this._rafId=requestAnimationFrame(loop)
-
-this._tick(now)
 
 }
 
-this._rafId=requestAnimationFrame(loop)
-
-}
-  _tick(now){
+this._rafId=requestAnimationFrame(this._boundTick)
 
 this.rawDelta=(now-this._lastNow)*0.001
 
 this._lastNow=now
 
-if(!Number.isFinite(this.rawDelta))this.rawDelta=0
+if(!Number.isFinite(this.rawDelta)||this.rawDelta<=0)
+this.rawDelta=0.000001
 
 if(this.lockFPS){
 
@@ -299,100 +305,19 @@ this.temporalBuffers.frameIndex++
 
 _updateCinematicClock(){
 
-this.cinematicClock+=this.delta
+this.clock.elapsedTime+=this.delta
 
 }
 
-_updateTemporalState(){
+_runExecutionGraph(){
 
-const camera=this.cameraSystem?.getCamera?.()
+const graph=this.executionGraph
 
-if(!camera)return
+const size=this.executionGraphSize
 
-this.temporalState.prevViewMatrix.copy(this.temporalState.viewMatrix)
-this.temporalState.prevProjectionMatrix.copy(this.temporalState.projectionMatrix)
-this.temporalState.prevViewProjectionMatrix.copy(this.temporalState.viewProjectionMatrix)
-this.temporalState.prevCameraPosition.copy(this.temporalState.cameraPosition)
-this.temporalState.prevJitter.copy(this.temporalState.jitter)
+for(let i=0;i<size;i++){
 
-this.temporalState.viewMatrix.copy(camera.matrixWorldInverse)
-
-this.temporalState.projectionMatrix.copy(camera.projectionMatrix)
-
-this.temporalState.viewProjectionMatrix.multiplyMatrices(
-this.temporalState.projectionMatrix,
-this.temporalState.viewMatrix
-)
-
-this.temporalState.cameraPosition.copy(camera.position)
-
-this._generateTemporalJitter()
-
-}
-
-_generateTemporalJitter(){
-
-const index=this.temporalBuffers.frameIndex%8
-
-const haltonX=this._halton(index,2)-0.5
-const haltonY=this._halton(index,3)-0.5
-
-this.temporalState.jitter.set(haltonX,haltonY)
-
-}
-
-_halton(index,base){
-
-let result=0
-let f=1/base
-let i=index
-
-while(i>0){
-
-result+=f*(i%base)
-
-i=Math.floor(i/base)
-
-f/=base
-
-}
-
-return result
-
-}
-
-_solvePhysicalExposure(){
-
-const c=this.cameraPhysical
-
-const aperture=c.aperture
-const shutter=c.shutterSpeed
-const ISO=c.ISO
-
-const ev=(aperture*aperture)/shutter*(100/ISO)
-
-const exposure=1/ev
-
-this.exposureState.target=Math.min(
-this.exposureState.max,
-Math.max(this.exposureState.min,exposure)
-)
-
-this.exposureState.current+=(
-this.exposureState.target-this.exposureState.current
-)*this.exposureState.adaptationRate*this.delta
-
-this.exposureHistory[this.exposureIndex]=this.exposureState.current
-
-this.exposureIndex++
-
-if(this.exposureIndex>=this.exposureHistory.length){
-this.exposureIndex=0
-}
-
-if(this.pipeline){
-
-this.pipeline.currentExposure=this.exposureState.current
+graph[i]()
 
 }
 
@@ -402,21 +327,71 @@ _recordFrameTime(dt){
 
 this.frameHistory[this.frameHistoryIndex]=dt
 
-this.frameHistoryIndex++
-
-if(this.frameHistoryIndex>=this.frameHistory.length){
-this.frameHistoryIndex=0
-}
+this.frameHistoryIndex=(this.frameHistoryIndex+1)&511
 
 }
+  _updateTemporalState(){
 
-_runExecutionGraph(){
+const camera=this.cameraSystem?.getCamera?.()
 
-for(let i=0;i<this.executionGraphSize;i++){
+if(!camera)return
 
-this.executionGraph[i]()
+const ts=this.temporalState
+
+ts.prevViewMatrix.copy(ts.viewMatrix)
+ts.prevProjectionMatrix.copy(ts.projectionMatrix)
+ts.prevViewProjectionMatrix.copy(ts.viewProjectionMatrix)
+ts.prevCameraPosition.copy(ts.cameraPosition)
+ts.prevJitter.copy(ts.jitter)
+
+ts.viewMatrix.copy(camera.matrixWorldInverse)
+ts.projectionMatrix.copy(camera.projectionMatrix)
+
+ts.viewProjectionMatrix.multiplyMatrices(
+ts.projectionMatrix,
+ts.viewMatrix
+)
+
+ts.cameraPosition.copy(camera.position)
+
+this._generateTemporalJitter()
 
 }
+
+_generateTemporalJitter(){
+
+const index=(this.temporalBuffers.frameIndex&7)<<1
+
+this.temporalState.jitter.set(
+HALTON_2_3[index]-0.5,
+HALTON_2_3[index+1]-0.5
+)
+
+}
+
+_solvePhysicalExposure(){
+
+const c=this.cameraPhysical
+
+const ev100=(c.aperture*c.aperture)/c.shutterSpeed*(100/c.ISO)
+
+let exposure=1/ev100
+
+if(exposure<this.exposureState.min)exposure=this.exposureState.min
+else if(exposure>this.exposureState.max)exposure=this.exposureState.max
+
+this.exposureState.target=exposure
+
+this.exposureState.current+=(
+this.exposureState.target-this.exposureState.current
+)*this.exposureState.adaptationRate*this.delta
+
+this.exposureHistory[this.exposureIndex]=this.exposureState.current
+
+this.exposureIndex=(this.exposureIndex+1)&511
+
+if(this.pipeline)
+this.pipeline.currentExposure=this.exposureState.current
 
 }
 
@@ -426,7 +401,7 @@ this._phase=FRAME_PHASE.BEGIN
 
 this.commandCount=0
 
-this._emit?.('frame:begin',this.delta)
+this._emit('frameBegin',this.delta)
 
 }
 
@@ -436,17 +411,9 @@ this._phase=FRAME_PHASE.FIXED
 
 this.accumulator+=this.delta
 
-let subSteps=0
+let steps=0
 
 while(this.accumulator>=this.fixedDelta){
-
-if(subSteps>=this.maxSubSteps){
-
-this.accumulator=0
-
-break
-
-}
 
 this.scheduler?.fixedUpdate?.(this.fixedDelta)
 
@@ -454,7 +421,14 @@ this.systemManager?.fixedUpdate?.(this.fixedDelta)
 
 this.accumulator-=this.fixedDelta
 
-subSteps++
+steps++
+
+if(steps>=this.maxSubSteps){
+
+this.accumulator=0
+break
+
+}
 
 }
 
@@ -466,15 +440,21 @@ _phaseUpdate(){
 
 this._phase=FRAME_PHASE.UPDATE
 
-this.scheduler?.update?.(this.delta)
+const dt=this.delta
 
-this.systemManager?.update?.(this.delta)
+this.scheduler?.update?.(dt)
 
-this.environmentSystem?.update?.(this.delta)
+this.systemManager?.update?.(dt)
 
-this.cameraSystem?.update?.(this.delta)
+this.environmentSystem?.update?.(dt)
 
-this.sceneManager?.update?.(this.delta,this.time,this.alpha)
+this.cameraSystem?.update?.(dt)
+
+this.sceneManager?.update?.(
+dt,
+this.time,
+this.alpha
+)
 
 }
 
@@ -486,7 +466,10 @@ this.performanceMonitor?.update?.(this.delta)
 
 const fps=this.performanceMonitor?.getFPS?.()||this.targetFPS
 
-this.performanceScaler?.update?.(fps,this.delta)
+this.performanceScaler?.update?.(
+fps,
+this.delta
+)
 
 this.memoryMonitor?.update?.(this.delta)
 
@@ -497,7 +480,9 @@ _phaseRender(){
 this._phase=FRAME_PHASE.RENDER
 
 const renderer=this.renderer
+
 const scene=this.sceneManager?.getScene?.()
+
 const camera=this.cameraSystem?.getCamera?.()
 
 if(!renderer||!scene||!camera)return
@@ -516,7 +501,9 @@ _phasePostRender(){
 
 this._phase=FRAME_PHASE.POST_RENDER
 
-this._executeCommandQueue()
+this._executeGPUCommandBuffer()
+
+this._updateHDRState()
 
 }
 
@@ -526,38 +513,19 @@ this._phase=FRAME_PHASE.END
 
 this.temporalBuffers.historyValid=true
 
-}
-
-_executeCommandQueue(){
-
-for(let i=0;i<this.commandCount;i++){
-
-const cmd=this.commandQueue[i]
-
-if(cmd)cmd()
-
-this.commandQueue[i]=null
+this._emit('frameEnd')
 
 }
 
-this.commandCount=0
+_executeGPUCommandBuffer(){
 
-}
+const queue=this.commandQueue
 
-enqueueCommand(fn){
+const count=this.commandCount
 
-if(this.commandCount>=this.commandQueue.length)return
+for(let i=0;i<count;i++){
 
-this.commandQueue[this.commandCount++]=fn
-
-}
-  _executeGPUCommandBuffer(){
-
-if(!this.commandCount)return
-
-for(let i=0;i<this.commandCount;i++){
-
-const cmd=this.commandQueue[i]
+const cmd=queue[i]
 
 if(cmd){
 
@@ -571,9 +539,9 @@ console.warn('[GPU COMMAND ERROR]',e)
 
 }
 
-}
+queue[i]=null
 
-this.commandQueue[i]=null
+}
 
 }
 
@@ -581,23 +549,15 @@ this.commandCount=0
 
 }
 
-_allocateMemory(bytes){
+enqueueCommand(fn){
 
-this.memoryState.allocated+=bytes
+const index=this.commandCount
 
-if(this.memoryState.allocated>this.memoryState.peak){
+if(index>=this.commandQueue.length)return
 
-this.memoryState.peak=this.memoryState.allocated
+this.commandQueue[index]=fn
 
-}
-
-}
-
-_freeMemory(bytes){
-
-this.memoryState.allocated-=bytes
-
-if(this.memoryState.allocated<0)this.memoryState.allocated=0
+this.commandCount=index+1
 
 }
 
@@ -612,55 +572,11 @@ this.pipeline.hdrEnabled=this.colorState.HDR
 this.pipeline.acesEnabled=this.colorState.ACES
 
 }
-
-_setCinematicCameraParameters(params={}){
-
-const c=this.cameraPhysical
-
-if(params.sensorWidth!==undefined)c.sensorWidth=params.sensorWidth
-if(params.sensorHeight!==undefined)c.sensorHeight=params.sensorHeight
-if(params.focalLength!==undefined)c.focalLength=params.focalLength
-if(params.aperture!==undefined)c.aperture=params.aperture
-if(params.shutterSpeed!==undefined)c.shutterSpeed=params.shutterSpeed
-if(params.ISO!==undefined)c.ISO=params.ISO
-if(params.focusDistance!==undefined)c.focusDistance=params.focusDistance
-if(params.shutterAngle!==undefined)c.shutterAngle=params.shutterAngle
-
-}
-
-_setCinematicFPS(fps){
-
-if(!Number.isFinite(fps))return
-
-this.targetFPS=fps
-
-this.frameInterval=1/fps
-
-}
-
-_setExecutionMode(mode){
-
-this.executionMode=mode
-
-}
-
-_phasePostRender(){
-
-this._phase=FRAME_PHASE.POST_RENDER
-
-this._executeGPUCommandBuffer()
-
-this._updateHDRState()
-
-}
-
-stop(){
+  stop(){
 
 if(!this.running)return
 
 this.running=false
-
-this.paused=false
 
 cancelAnimationFrame(this._rafId)
 
@@ -672,7 +588,7 @@ this.clock.stop()
 
 this.state=ENGINE_STATE.STOPPED
 
-this._emit?.('stop')
+this._emit('stop')
 
 }
 
@@ -684,7 +600,9 @@ this.paused=true
 
 this.clock.stop()
 
-this._emit?.('pause')
+this.state=ENGINE_STATE.PAUSED
+
+this._emit('pause')
 
 }
 
@@ -698,7 +616,9 @@ this.clock.start()
 
 this._lastNow=performance.now()
 
-this._emit?.('resume')
+this.state=ENGINE_STATE.RUNNING
+
+this._emit('resume')
 
 }
 
@@ -726,13 +646,14 @@ this.commandQueue.fill(null)
 this.executionGraphSize=0
 
 this.initialized=false
+
 this.destroyed=true
 
 Engine.instance=null
 
 this.state=ENGINE_STATE.DESTROYED
 
-this._emit?.('shutdown')
+this._emit('shutdown')
 
 }
 
@@ -804,6 +725,55 @@ console.warn('[EVENT ERROR]',e)
 
 }
 
+_allocateMemory(bytes){
+
+this.memoryState.allocated+=bytes
+
+if(this.memoryState.allocated>this.memoryState.peak)
+this.memoryState.peak=this.memoryState.allocated
+
+}
+
+_freeMemory(bytes){
+
+this.memoryState.allocated-=bytes
+
+if(this.memoryState.allocated<0)
+this.memoryState.allocated=0
+
+}
+
+_setCinematicCameraParameters(params={}){
+
+const c=this.cameraPhysical
+
+if(params.sensorWidth!==undefined)c.sensorWidth=params.sensorWidth
+if(params.sensorHeight!==undefined)c.sensorHeight=params.sensorHeight
+if(params.focalLength!==undefined)c.focalLength=params.focalLength
+if(params.aperture!==undefined)c.aperture=params.aperture
+if(params.shutterSpeed!==undefined)c.shutterSpeed=params.shutterSpeed
+if(params.ISO!==undefined)c.ISO=params.ISO
+if(params.focusDistance!==undefined)c.focusDistance=params.focusDistance
+if(params.shutterAngle!==undefined)c.shutterAngle=params.shutterAngle
+
+}
+
+_setCinematicFPS(fps){
+
+if(!Number.isFinite(fps)||fps<=0)return
+
+this.targetFPS=fps
+
+this.frameInterval=1/fps
+
+}
+
+_setExecutionMode(mode){
+
+this.executionMode=mode
+
+}
+
 getCinematicExposure(){
 
 return this.exposureState.current
@@ -842,6 +812,16 @@ fps:1/this.delta
 
 }
 
-isRunning(){return this.running}
-isInitialized(){return this.initialized}
-isDestroyed(){return this.destroyed}
+isRunning(){
+return this.running
+}
+
+isInitialized(){
+return this.initialized
+}
+
+isDestroyed(){
+return this.destroyed
+}
+
+}
