@@ -1309,6 +1309,11 @@ systemManager:this.systemManager,
 configRuntime:getEngineConfigRuntimeState()
 }
 
+Object.freeze(__ENGINE_AUTHORITY_CONTAINER.runtime)
+Object.freeze(__ENGINE_AUTHORITY_CONTAINER.runtime.configRuntime)
+Object.freeze(__ENGINE_AUTHORITY_CONTAINER.runtime.pipeline)
+Object.freeze(__ENGINE_AUTHORITY_CONTAINER.runtime.systemManager)
+Object.freeze(__ENGINE_AUTHORITY_CONTAINER.runtime.engine)
 this.__deepFreezeRuntime=(obj,seen=new WeakSet())=>{
 if(obj===null||typeof obj!=="object")return obj
 if(seen.has(obj))return obj
