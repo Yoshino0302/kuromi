@@ -26,6 +26,8 @@ Object.freeze(__ENGINE_AUTHORITY_CONTAINER.config)
 Object.freeze(__ENGINE_AUTHORITY_CONTAINER.derived)
 Object.freeze(__ENGINE_AUTHORITY_CONTAINER.gpu)
 Object.freeze(__ENGINE_AUTHORITY_CONTAINER.runtime)
+Object.freeze(__ENGINE_AUTHORITY_CONTAINER.renderer)
+Object.freeze(__ENGINE_AUTHORITY_CONTAINER)
 __ENGINE_AUTHORITY_CONTAINER.locked=true
 }
 
@@ -1234,6 +1236,8 @@ config:this.config.RENDERER
 await this.renderer.init?.()
 initializeEngineConfig(this.renderer.getRenderer?.()||this.renderer)
 this.derived=getDerivedConfig()
+__ENGINE_AUTHORITY_CONTAINER.derived=this.derived
+Object.freeze(__ENGINE_AUTHORITY_CONTAINER.derived)
 assertEngineConfigAuthority()
 __ENGINE_AUTHORITY_CONTAINER.renderer=this.renderer
 Object.freeze(__ENGINE_AUTHORITY_CONTAINER.renderer)
@@ -1305,9 +1309,22 @@ systemManager:this.systemManager,
 configRuntime:getEngineConfigRuntimeState()
 }
 
-Object.freeze(__ENGINE_AUTHORITY_CONTAINER.runtime)
+this.__deepFreezeRuntime=(obj,seen=new WeakSet())=>{
+if(obj===null||typeof obj!=="object")return obj
+if(seen.has(obj))return obj
+seen.add(obj)
+Object.freeze(obj)
+const keys=Object.getOwnPropertyNames(obj)
+for(let i=0;i<keys.length;i++){
+this.__deepFreezeRuntime(obj[keys[i]],seen)
+}
+return obj
+}
+this.__deepFreezeRuntime(__ENGINE_AUTHORITY_CONTAINER.runtime)
 
 __lockAuthorityContainer()
+__assertAuthorityIntegrity()
+assertEngineConfigAuthority()
 }
 
 return this
