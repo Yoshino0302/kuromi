@@ -21,14 +21,30 @@ locked:false
 }
 
 function __lockAuthorityContainer(){
+
 if(__ENGINE_AUTHORITY_CONTAINER.locked)return
-Object.freeze(__ENGINE_AUTHORITY_CONTAINER.config)
-Object.freeze(__ENGINE_AUTHORITY_CONTAINER.derived)
-Object.freeze(__ENGINE_AUTHORITY_CONTAINER.gpu)
-Object.freeze(__ENGINE_AUTHORITY_CONTAINER.runtime)
-Object.freeze(__ENGINE_AUTHORITY_CONTAINER.renderer)
-Object.freeze(__ENGINE_AUTHORITY_CONTAINER)
+
+const freezeSafe=(obj)=>{
+if(!obj||typeof obj!=="object")return
+Object.freeze(obj)
+for(const key of Object.keys(obj)){
+const value=obj[key]
+if(value&&typeof value==="object"&&!Object.isFrozen(value)){
+Object.freeze(value)
+}
+}
+}
+
+freezeSafe(__ENGINE_AUTHORITY_CONTAINER.config)
+freezeSafe(__ENGINE_AUTHORITY_CONTAINER.derived)
+freezeSafe(__ENGINE_AUTHORITY_CONTAINER.gpu)
+freezeSafe(__ENGINE_AUTHORITY_CONTAINER.runtime)
+freezeSafe(__ENGINE_AUTHORITY_CONTAINER.renderer)
+
 __ENGINE_AUTHORITY_CONTAINER.locked=true
+
+Object.freeze(__ENGINE_AUTHORITY_CONTAINER)
+
 }
 
 function __assertAuthorityIntegrity(){
@@ -1033,8 +1049,26 @@ export class Engine{
 static instance=null
 
 static getInstance(options={}){
-if(!Engine.instance)Engine.instance=new Engine(options)
+
+if(Engine.instance instanceof Engine){
 return Engine.instance
+}
+
+const instance=new Engine(options)
+
+Object.defineProperty(
+Engine,
+"instance",
+{
+value:instance,
+writable:false,
+configurable:false,
+enumerable:false
+}
+)
+
+return instance
+
 }
 
 constructor(options={}){
@@ -1338,10 +1372,9 @@ start(){
 
 if(this.running)return
 
+if(this.running)return
 this.running=true
-
 this.clock.start()
-
 this._loop()
 }
 
@@ -1372,15 +1405,15 @@ const renderables=this.sceneManager?.getRenderables?.()
 UPDATE CINEMATIC SYSTEMS
 ============================== */
 
-this.temporalSystem.update(delta,this.renderer)
-this.motionBlurSystem.update(delta,scene,camera,renderables)
-this.dofSystem.update(delta,camera,renderables)
-this.volumetricSystem.update(delta,scene,camera)
-this.colorGradingSystem.update(delta)
-this.lensSystem.update(delta)
-this.filmGrainSystem.update(delta)
-this.reflectionSystem.update(delta,this.renderer)
-this.giSystem.update(delta,scene)
+if(this.temporalSystem)this.temporalSystem.update(delta,this.renderer)
+if(this.motionBlurSystem)this.motionBlurSystem.update(delta,scene,camera,renderables)
+if(this.dofSystem)this.dofSystem.update(delta,camera,renderables)
+if(this.volumetricSystem)this.volumetricSystem.update(delta,scene,camera)
+if(this.colorGradingSystem)this.colorGradingSystem.update(delta)
+if(this.lensSystem)this.lensSystem.update(delta)
+if(this.filmGrainSystem)this.filmGrainSystem.update(delta)
+if(this.reflectionSystem)this.reflectionSystem.update(delta,this.renderer)
+if(this.giSystem)this.giSystem.update(delta,scene)
 
 /* ============================== */
 
@@ -1408,15 +1441,15 @@ delta
 APPLY CINEMATIC SYSTEMS
 ============================== */
 
-this.temporalSystem.resolve(context)
-this.motionBlurSystem.apply(context)
-this.dofSystem.apply(context)
-this.volumetricSystem.apply(context)
-this.colorGradingSystem.apply(context)
-this.lensSystem.apply(context)
-this.filmGrainSystem.apply(context)
-this.reflectionSystem.apply(context)
-this.giSystem.apply(context)
+if(this.temporalSystem)this.temporalSystem.resolve(context)
+if(this.motionBlurSystem)this.motionBlurSystem.apply(context)
+if(this.dofSystem)this.dofSystem.apply(context)
+if(this.volumetricSystem)this.volumetricSystem.apply(context)
+if(this.colorGradingSystem)this.colorGradingSystem.apply(context)
+if(this.lensSystem)this.lensSystem.apply(context)
+if(this.filmGrainSystem)this.filmGrainSystem.apply(context)
+if(this.reflectionSystem)this.reflectionSystem.apply(context)
+if(this.giSystem)this.giSystem.apply(context)
 
 /* ============================== */
 
@@ -1446,15 +1479,15 @@ this.clock.stop()
 
 dispose(){
 
-this.temporalSystem.dispose()
-this.motionBlurSystem.dispose()
-this.dofSystem.dispose()
-this.volumetricSystem.dispose()
-this.colorGradingSystem.dispose()
-this.lensSystem.dispose()
-this.filmGrainSystem.dispose()
-this.reflectionSystem.dispose()
-this.giSystem.dispose()
+if(this.temporalSystem)this.temporalSystem.dispose()
+if(this.motionBlurSystem)this.motionBlurSystem.dispose()
+if(this.dofSystem)this.dofSystem.dispose()
+if(this.volumetricSystem)this.volumetricSystem.dispose()
+if(this.colorGradingSystem)this.colorGradingSystem.dispose()
+if(this.lensSystem)this.lensSystem.dispose()
+if(this.filmGrainSystem)this.filmGrainSystem.dispose()
+if(this.reflectionSystem)this.reflectionSystem.dispose()
+if(this.giSystem)this.giSystem.dispose()
 
 this.destroyed=true
 
@@ -1482,9 +1515,9 @@ constructor(origin=new THREE.Vector3(),direction=new THREE.Vector3()){
 this.origin=origin.clone()
 this.direction=direction.clone().normalize()
 this.invDirection=new THREE.Vector3(
-1/(Math.abs(this.direction.x)<PT_EPSILON?PT_EPSILON:this.direction.x),
-1/(Math.abs(this.direction.y)<PT_EPSILON?PT_EPSILON:this.direction.y),
-1/(Math.abs(this.direction.z)<PT_EPSILON?PT_EPSILON:this.direction.z)
+Math.abs(this.direction.x)>PT_EPSILON?1/this.direction.x:PT_INFINITY,
+Math.abs(this.direction.y)>PT_EPSILON?1/this.direction.y:PT_INFINITY,
+Math.abs(this.direction.z)>PT_EPSILON?1/this.direction.z:PT_INFINITY
 )
 this.sign=[
 this.invDirection.x<0?1:0,
@@ -1567,9 +1600,24 @@ updateBounds(){
 const geom=this.object.geometry
 if(!geom.boundingBox)geom.computeBoundingBox()
 const box=geom.boundingBox
-this.bounds.min.copy(box.min)
-this.bounds.max.copy(box.max)
-this.center.copy(box.min).add(box.max).multiplyScalar(0.5)
+const matrix=this.object.matrixWorld
+this.bounds.min.set(PT_INFINITY,PT_INFINITY,PT_INFINITY)
+this.bounds.max.set(-PT_INFINITY,-PT_INFINITY,-PT_INFINITY)
+const points=[
+new THREE.Vector3(box.min.x,box.min.y,box.min.z),
+new THREE.Vector3(box.min.x,box.min.y,box.max.z),
+new THREE.Vector3(box.min.x,box.max.y,box.min.z),
+new THREE.Vector3(box.min.x,box.max.y,box.max.z),
+new THREE.Vector3(box.max.x,box.min.y,box.min.z),
+new THREE.Vector3(box.max.x,box.min.y,box.max.z),
+new THREE.Vector3(box.max.x,box.max.y,box.min.z),
+new THREE.Vector3(box.max.x,box.max.y,box.max.z)
+]
+for(let i=0;i<8;i++){
+points[i].applyMatrix4(matrix)
+this.bounds.expandByPoint(points[i])
+}
+this.center.copy(this.bounds.min).add(this.bounds.max).multiplyScalar(0.5)
 }
 intersect(ray,hit){
 const mesh=this.object
@@ -1641,8 +1689,9 @@ this.root=null
 }
 buildFromScene(scene){
 this.primitives.length=0
+scene.updateMatrixWorld(true)
 scene.traverse(obj=>{
-if(obj.isMesh&&obj.geometry){
+if(obj.isMesh&&obj.geometry&&obj.visible){
 this.primitives.push(new PTPrimitive(obj))
 }
 })
@@ -1674,8 +1723,8 @@ let found=false
 if(node.isLeaf()){
 return node.primitive.intersect(ray,hit)
 }
-if(this._intersectNode(node.left,ray,hit))found=true
-if(this._intersectNode(node.right,ray,hit))found=true
+if(node.left&&this._intersectNode(node.left,ray,hit))found=true
+if(node.right&&this._intersectNode(node.right,ray,hit))found=true
 return found
 }
 }
@@ -1788,7 +1837,7 @@ constructor(scene){
 this.scene=scene
 this.bvh=new PTBVHBuilder()
 this.materialMap=new Map()
-this.lights=[]
+this.lights.length=0
 this._extractLights(scene)
 this.bvh.buildFromScene(scene)
 }
@@ -1830,18 +1879,22 @@ this.background=new THREE.Color(0,0,0)
 }
 trace(ray){
 const radiance=new THREE.Color(0,0,0)
-const throughput=new THREE.Color(1,1,1)
-const hit=new PTHit()  for(let depth=0;depth<this.maxDepth;depth++){
+let throughput=new THREE.Color(1,1,1)
+const hit=new PTHit()
 let currentRay=ray.clone()
 for(let bounce=0;bounce<this.maxBounces;bounce++){
 hit.reset()
 if(!this.scene.intersect(currentRay,hit)){
-radiance.addScaledVector(this.background,throughput.r)
+radiance.add(
+throughput.clone().multiply(this.background)
+)
 break
 }
 const material=this.scene.getMaterial(hit.object)
 const emission=material.getEmission()
-radiance.addScaledVector(emission,throughput.r)
+radiance.add(
+throughput.clone().multiply(emission)
+)
 for(const light of this.scene.lights){
 const sample=light.sample(hit.position,this.sampler)
 const shadowRay=new PTRay(
@@ -1850,7 +1903,11 @@ sample.direction
 )
 const shadowHit=new PTHit()
 if(!this.scene.intersect(shadowRay,shadowHit)||shadowHit.t>sample.distance){
-const brdf=material.evaluateBRDF(hit.normal,currentRay.direction.clone().negate(),sample.direction)
+const brdf=material.evaluateBRDF(
+hit.normal,
+currentRay.direction.clone().negate(),
+sample.direction
+)
 radiance.add(
 throughput.clone()
 .multiply(brdf)
@@ -1858,14 +1915,26 @@ throughput.clone()
 )
 }
 }
-const newDir=material.sampleDirection(hit.normal,currentRay.direction.clone().negate(),this.sampler)
-const brdf=material.evaluateBRDF(hit.normal,currentRay.direction.clone().negate(),newDir)
-throughput.multiply(brdf)
+const newDir=material.sampleDirection(
+hit.normal,
+currentRay.direction.clone().negate(),
+this.sampler
+)
+const brdf=material.evaluateBRDF(
+hit.normal,
+currentRay.direction.clone().negate(),
+newDir
+)
+throughput.multiply(brdf).clampScalar(0,10)
 currentRay=new PTRay(
 hit.position.clone().addScaledVector(hit.normal,PT_EPSILON),
 newDir
 )
-if(Math.max(throughput.r,throughput.g,throughput.b)<0.001){
+if(
+throughput.r<0.001&&
+throughput.g<0.001&&
+throughput.b<0.001
+){
 break
 }
 }
@@ -1955,7 +2024,9 @@ this.sampleBuffer=null
 }
 resize(width,height){
 this.accumulation.resize(width,height)
+if(!this.sampleBuffer||this.sampleBuffer.length!==width*height*4){
 this.sampleBuffer=new Float32Array(width*height*4)
+}
 this.currentSamples=0
 }
 reset(){
@@ -1964,7 +2035,8 @@ this.currentSamples=0
 }
 render(){
 if(!this.enabled)return
-const size=this.renderer.getSize(new THREE.Vector2())
+const size=this.renderer?.getSize?.(new THREE.Vector2())
+if(!size)return
 const width=size.x|0
 const height=size.y|0
 if(!this.sampleBuffer||this.accumulation.width!==width||this.accumulation.height!==height){
@@ -1978,6 +2050,7 @@ if(this.currentSamples>=this.maxSamples)break
 }
 }
 _renderSample(width,height){
+this.sampleBuffer.fill(0)
 let i=0
 for(let y=0;y<height;y++){
 for(let x=0;x<width;x++){
@@ -2006,7 +2079,8 @@ this.tracer=new PTHybridTracer(renderer,scene,camera)
 this.enabled=true
 }
 update(){
-if(!this.enabled||!this.tracer)return
+if(!this.enabled)return
+if(!this.tracer)return
 this.tracer.render()
 }
 reset(){
@@ -2190,7 +2264,7 @@ _traceLambda(ray,lambda){
 let radiance=0
 let throughput=1
 
-const hit=new PTHit()  for(let depth=0;depth<this.maxDepth;depth++){
+const hit=new PTHit()
 let currentRay=ray.clone()
 
 for(let bounce=0;bounce<this.maxBounces;bounce++){
@@ -2232,19 +2306,22 @@ newDir
 
 throughput*=brdf
 
+if(throughput<0.000001){
+break
+}
+
+throughput=Math.min(throughput,10)
+
 currentRay=new PTRay(
 hit.position.clone().addScaledVector(hit.normal,PT_EPSILON),
 newDir
 )
 
-if(throughput<0.0001){
-break
-}
-
 }
 
 return radiance
 
+}
 }
 
 }
@@ -2385,7 +2462,7 @@ return gi.multiplyScalar(NdotL*this.indirectStrength)
 
 trace(ray){
 
-const hit=new PTHit()  for(let depth=0;depth<this.maxDepth;depth++){
+const hit=new PTHit() for(let bounce=0;bounce<this.maxBounces;bounce++){
 
 if(!this.scene.intersect(ray,hit)){
 return new THREE.Color(0,0,0)
@@ -2523,7 +2600,7 @@ hit.normal,
 currentRay.direction.clone().negate(),
 reflectDir
 )
-throughput.multiply(spec)
+throughput.multiply(spec).clampScalar(0,10)
 currentRay=new PTRay(
 hit.position.clone().addScaledVector(hit.normal,PT_EPSILON),
 reflectDir
@@ -2554,7 +2631,7 @@ new THREE.Vector3(0,0,-1)
 for(let i=0;i<6;i++){
 const ray=new PTRay(this.position,directions[i])
 const color=integrator.traceReflection(ray)
-this.cubemap[i].add(color)
+this.cubemap[i].add(color).clampScalar(0,100)
 }
 this.sampleCount++
 }
@@ -2713,7 +2790,7 @@ break
 const scatterDist=material.sampleScatterDistance(this.sampler)
 hit.scatterDistance=scatterDist
 const scatterColor=material.evaluateSSS(scatterDist)
-throughput.multiply(scatterColor)
+throughput.multiply(scatterColor).clampScalar(0,5)
 const scatterDir=material.sampleScatterDirection(hit.normal,this.sampler)
 currentRay=new PTRay(
 hit.position.clone().addScaledVector(scatterDir,scatterDist),
@@ -2821,10 +2898,13 @@ this.data[i+2]=color.b
 this.data[i+3]=1
 }
 addPixel(x,y,color){
+
 const i=(y*this.width+x)*4
-this.data[i]+=color.r
-this.data[i+1]+=color.g
-this.data[i+2]+=color.b
+
+this.data[i]+=Math.min(color.r,1000)
+this.data[i+1]+=Math.min(color.g,1000)
+this.data[i+2]+=Math.min(color.b,1000)
+
 }
 getPixel(x,y,target=new THREE.Color()){
 const i=(y*this.width+x)*4
@@ -2860,13 +2940,15 @@ return Math.exp(sum/(len/4))
 }
 update(buffer){
 if(!this.autoExposure)return
-const avgLum=this.computeAverageLuminance(buffer)
+const avgLum=Math.max(0.000001,this.computeAverageLuminance(buffer))
 const targetExposure=this.keyValue/(avgLum+0.0001)
+if(Number.isFinite(targetExposure)){
 this.exposure=THREE.MathUtils.lerp(
 this.exposure,
 targetExposure,
 this.adaptationRate
 )
+}
 this.exposure=Math.max(
 this.minExposure,
 Math.min(this.maxExposure,this.exposure)
@@ -2953,7 +3035,7 @@ this.sampler=new PTSampler(777)
 
 apply(color){
 
-const noise=(this.sampler.next()-0.5)*this.strength
+const noise=(this.sampler.next()-0.5)*this.strength*0.5
 
 return new THREE.Color(
 color.r+noise,
@@ -3027,9 +3109,9 @@ if(this.enableGrain){
 color=this.filmGrain.apply(color)
 }
 
-output[i++]=color.r
-output[i++]=color.g
-output[i++]=color.b
+output[i++]=Number.isFinite(color.r)?color.r:0
+output[i++]=Number.isFinite(color.g)?color.g:0
+output[i++]=Number.isFinite(color.b)?color.b:0
 output[i++]=1
 
 }
@@ -3708,7 +3790,7 @@ throughput.distribution.setUniform(1)
 
 let currentRay=ray.clone()
 
-const hit=new PTHit()  for(let depth=0;depth<this.maxDepth;depth++){
+const hit=new PTHit() for(let bounce=0;bounce<this.maxBounces;bounce++){
 
 for(let bounce=0;bounce<this.maxBounces;bounce++){
 
@@ -3910,7 +3992,7 @@ const state=new PTHybridPathState()
 
 state.reset(ray)
 
-const hit=new PTHit()  for(let depth=0;depth<this.maxDepth;depth++){
+const hit=new PTHit() for(let bounce=0;bounce<this.maxBounces;bounce++){
 
 while(!state.done){
 
@@ -5747,7 +5829,7 @@ let currentRay=ray.clone()
 
 let throughput=new THREE.Color(1,1,1)
 
-const hit=new PTHit()  for(let depth=0;depth<this.maxDepth;depth++){
+const hit=new PTHit() for(let bounce=0;bounce<this.maxBounces;bounce++){
 
 for(let depth=0;depth<this.maxDepth;depth++){
 
@@ -5797,7 +5879,7 @@ this.sampleDirection(light.normal)
 
 let throughput=light.emission.clone()
 
-const hit=new PTHit()  for(let depth=0;depth<this.maxDepth;depth++){
+const hit=new PTHit() for(let bounce=0;bounce<this.maxBounces;bounce++){
 
 for(let depth=0;depth<this.maxDepth;depth++){
 
@@ -6355,7 +6437,7 @@ photon.position.clone(),
 photon.direction.clone()
 )
 
-const hit=new PTHit()  for(let depth=0;depth<this.maxDepth;depth++){
+const hit=new PTHit() for(let bounce=0;bounce<this.maxBounces;bounce++){
 
 let power=photon.power.clone()
 
@@ -6682,7 +6764,7 @@ return result
 
 traceWavelength(ray,sample){
 
-const hit=new PTHit()  for(let depth=0;depth<this.maxDepth;depth++){
+const hit=new PTHit() for(let bounce=0;bounce<this.maxBounces;bounce++){
 
 if(!this.sceneAccel.intersect(ray,hit)){
 
@@ -6944,7 +7026,7 @@ this.samples=4
 
 evaluate(ray){
 
-const hit=new PTHit()  for(let depth=0;depth<this.maxDepth;depth++){
+const hit=new PTHit() for(let bounce=0;bounce<this.maxBounces;bounce++){
 
 if(!this.sceneAccel.intersect(ray,hit)){
 
@@ -7159,7 +7241,7 @@ new THREE.Color(1,1,1)
 
 for(let depth=0;depth<this.maxDepth;depth++){
 
-const hit=new PTHit()  for(let depth=0;depth<this.maxDepth;depth++){
+const hit=new PTHit() for(let bounce=0;bounce<this.maxBounces;bounce++){
 
 if(!this.sceneAccel.intersect(
 new PTRay(ray.origin,ray.direction),
@@ -8465,7 +8547,7 @@ color.add(
 this.dispersion.trace(ray)
 )
 
-const hit=new PTHit()  for(let depth=0;depth<this.maxDepth;depth++){
+const hit=new PTHit() for(let bounce=0;bounce<this.maxBounces;bounce++){
 
 const sceneAccel=new PTScene(this.scene)
 
