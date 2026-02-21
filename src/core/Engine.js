@@ -1487,14 +1487,13 @@ const delta=this.clock.getDelta()
 
 const elapsed=this.clock.getElapsedTime()
 
-this.__update(delta,elapsed)
+this.update(delta,elapsed)
 
-this.__render(delta,elapsed)
+this.render(delta,elapsed)
 
 this.__loopHandle=requestAnimationFrame(this.__loopBound)
 
 }
-
 this.update(delta)
 
 this.render(delta)
@@ -1598,34 +1597,6 @@ this.stop()
 
 }
 
-/* ==============================
-APPLY CINEMATIC SYSTEMS
-============================== */
-
-if(this.temporalSystem)this.temporalSystem.resolve(context)
-if(this.motionBlurSystem)this.motionBlurSystem.apply(context)
-if(this.dofSystem)this.dofSystem.apply(context)
-if(this.volumetricSystem)this.volumetricSystem.apply(context)
-if(this.colorGradingSystem)this.colorGradingSystem.apply(context)
-if(this.lensSystem)this.lensSystem.apply(context)
-if(this.filmGrainSystem)this.filmGrainSystem.apply(context)
-if(this.reflectionSystem)this.reflectionSystem.apply(context)
-if(this.giSystem)this.giSystem.apply(context)
-
-/* ============================== */
-
-this.pipeline.render?.(
-renderer,
-scene,
-camera,
-delta,
-0,
-null,
-context
-)
-
-this.frame++
-
 }
 
 stop(){
@@ -1656,7 +1627,7 @@ if(this.destroyed)return
 this.stop()
 
 this.__clearAllListeners()
-  
+
 if(this.temporalSystem)this.temporalSystem.dispose()
 if(this.motionBlurSystem)this.motionBlurSystem.dispose()
 if(this.dofSystem)this.dofSystem.dispose()
@@ -1668,8 +1639,12 @@ if(this.reflectionSystem)this.reflectionSystem.dispose()
 if(this.giSystem)this.giSystem.dispose()
 
 if(this.pipeline?.dispose)this.pipeline.dispose()
-if(this.renderer?.dispose)this.renderer.dispose()
-const internalRenderer=this.renderer?.getRenderer?.()||this.renderer?._renderer||this.renderer?.renderer||null
+
+const internalRenderer=
+this.renderer?.getRenderer?.()||
+this.renderer?._renderer||
+this.renderer?.renderer||
+null
 
 if(internalRenderer){
 
@@ -1701,16 +1676,17 @@ console.warn("[ENGINE_RENDERER_CLEANUP_WARNING]",e)
 }
 
 }
+
+if(this.renderer?.dispose)this.renderer.dispose()
+
 if(this.sceneManager?.dispose)this.sceneManager.dispose()
 if(this.cameraSystem?.dispose)this.cameraSystem.dispose()
 if(this.systemManager?.dispose)this.systemManager.dispose()
 if(this.scheduler?.dispose)this.scheduler.dispose()
 if(this.assetManager?.dispose)this.assetManager.dispose()
 if(this.environmentSystem?.dispose)this.environmentSystem.dispose()
-
 if(this.performanceMonitor?.dispose)this.performanceMonitor.dispose()
 if(this.performanceScaler?.dispose)this.performanceScaler.dispose()
-
 if(this.memoryMonitor?.dispose)this.memoryMonitor.dispose()
 
 if(this.frameGraph?.clear)this.frameGraph.clear()
@@ -1718,7 +1694,6 @@ if(this.frameGraph?.clear)this.frameGraph.clear()
 if(this.clock){
 
 this.clock.stop()
-
 this.clock=null
 
 }
@@ -1738,7 +1713,6 @@ this.frameGraph=null
 
 this.running=false
 this.initialized=false
-
 this.destroyed=true
 
 }
