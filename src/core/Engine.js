@@ -1051,7 +1051,9 @@ static instance=null
 static getInstance(options={}){
 
 if(Engine.instance instanceof Engine){
+
 return Engine.instance
+
 }
 
 const instance=new Engine(options)
@@ -1073,8 +1075,22 @@ return instance
 
 constructor(options={}){
 
-if(Engine.instance)return Engine.instance
-Engine.instance=this
+if(Engine.instance instanceof Engine){
+
+return Engine.instance
+
+}
+
+Object.defineProperty(
+Engine,
+"instance",
+{
+value:this,
+writable:false,
+configurable:false,
+enumerable:false
+}
+)
 
 this.options=options
 this.config=ENGINE_CONFIG
@@ -1384,7 +1400,13 @@ if(!this.running)return
 
 requestAnimationFrame(()=>this._loop())
 
-const delta=this.clock.getDelta()
+let delta=this.clock.getDelta()
+
+if(!Number.isFinite(delta)||delta<=0||delta>1){
+
+delta=0.016
+
+}
 
 this.update(delta)
 
@@ -1597,27 +1619,47 @@ this.center=new THREE.Vector3()
 this.updateBounds()
 }
 updateBounds(){
+
 const geom=this.object.geometry
+
 if(!geom.boundingBox)geom.computeBoundingBox()
+
 const box=geom.boundingBox
+
 const matrix=this.object.matrixWorld
+
 this.bounds.min.set(PT_INFINITY,PT_INFINITY,PT_INFINITY)
 this.bounds.max.set(-PT_INFINITY,-PT_INFINITY,-PT_INFINITY)
-const points=[
-new THREE.Vector3(box.min.x,box.min.y,box.min.z),
-new THREE.Vector3(box.min.x,box.min.y,box.max.z),
-new THREE.Vector3(box.min.x,box.max.y,box.min.z),
-new THREE.Vector3(box.min.x,box.max.y,box.max.z),
-new THREE.Vector3(box.max.x,box.min.y,box.min.z),
-new THREE.Vector3(box.max.x,box.min.y,box.max.z),
-new THREE.Vector3(box.max.x,box.max.y,box.min.z),
-new THREE.Vector3(box.max.x,box.max.y,box.max.z)
-]
-for(let i=0;i<8;i++){
-points[i].applyMatrix4(matrix)
-this.bounds.expandByPoint(points[i])
-}
+
+const p0=new THREE.Vector3(box.min.x,box.min.y,box.min.z)
+const p1=new THREE.Vector3(box.min.x,box.min.y,box.max.z)
+const p2=new THREE.Vector3(box.min.x,box.max.y,box.min.z)
+const p3=new THREE.Vector3(box.min.x,box.max.y,box.max.z)
+const p4=new THREE.Vector3(box.max.x,box.min.y,box.min.z)
+const p5=new THREE.Vector3(box.max.x,box.min.y,box.max.z)
+const p6=new THREE.Vector3(box.max.x,box.max.y,box.min.z)
+const p7=new THREE.Vector3(box.max.x,box.max.y,box.max.z)
+
+p0.applyMatrix4(matrix)
+p1.applyMatrix4(matrix)
+p2.applyMatrix4(matrix)
+p3.applyMatrix4(matrix)
+p4.applyMatrix4(matrix)
+p5.applyMatrix4(matrix)
+p6.applyMatrix4(matrix)
+p7.applyMatrix4(matrix)
+
+this.bounds.expandByPoint(p0)
+this.bounds.expandByPoint(p1)
+this.bounds.expandByPoint(p2)
+this.bounds.expandByPoint(p3)
+this.bounds.expandByPoint(p4)
+this.bounds.expandByPoint(p5)
+this.bounds.expandByPoint(p6)
+this.bounds.expandByPoint(p7)
+
 this.center.copy(this.bounds.min).add(this.bounds.max).multiplyScalar(0.5)
+
 }
 intersect(ray,hit){
 const mesh=this.object
@@ -1688,14 +1730,33 @@ this.primitives=[]
 this.root=null
 }
 buildFromScene(scene){
+
 this.primitives.length=0
+
 scene.updateMatrixWorld(true)
+
 scene.traverse(obj=>{
-if(obj.isMesh&&obj.geometry&&obj.visible){
+
+if(!obj.visible)return
+
+if(obj.isMesh&&obj.geometry){
+
 this.primitives.push(new PTPrimitive(obj))
+
 }
+
 })
+
+if(this.primitives.length===0){
+
+this.root=null
+
+return
+
+}
+
 this.root=this._buildRecursive(this.primitives,0)
+
 }
 _buildRecursive(prims,depth){
 if(prims.length===0)return null
@@ -1925,7 +1986,9 @@ hit.normal,
 currentRay.direction.clone().negate(),
 newDir
 )
-throughput.multiply(brdf).clampScalar(0,10)
+throughput.multiply(brdf)
+
+throughput.clampScalar(0,10)
 currentRay=new PTRay(
 hit.position.clone().addScaledVector(hit.normal,PT_EPSILON),
 newDir
@@ -2023,11 +2086,19 @@ this.currentSamples=0
 this.sampleBuffer=null
 }
 resize(width,height){
+
 this.accumulation.resize(width,height)
-if(!this.sampleBuffer||this.sampleBuffer.length!==width*height*4){
-this.sampleBuffer=new Float32Array(width*height*4)
+
+const requiredSize=width*height*4
+
+if(!this.sampleBuffer||this.sampleBuffer.length!==requiredSize){
+
+this.sampleBuffer=new Float32Array(requiredSize)
+
 }
+
 this.currentSamples=0
+
 }
 reset(){
 this.accumulation.clear()
@@ -2050,18 +2121,34 @@ if(this.currentSamples>=this.maxSamples)break
 }
 }
 _renderSample(width,height){
+
 this.sampleBuffer.fill(0)
+
 let i=0
+
 for(let y=0;y<height;y++){
+
 for(let x=0;x<width;x++){
-const ray=this.ptCamera.generateRay(x,y,width,height,this.sampler)
+
+const ray=this.ptCamera.generateRay(
+x,
+y,
+width,
+height,
+this.sampler
+)
+
 const color=this.integrator.trace(ray)
-this.sampleBuffer[i++]=color.r
-this.sampleBuffer[i++]=color.g
-this.sampleBuffer[i++]=color.b
+
+this.sampleBuffer[i++]=Number.isFinite(color.r)?color.r:0
+this.sampleBuffer[i++]=Number.isFinite(color.g)?color.g:0
+this.sampleBuffer[i++]=Number.isFinite(color.b)?color.b:0
 this.sampleBuffer[i++]=1
+
 }
+
 }
+
 }
 getAccumulatedBuffer(){
 return this.accumulation.getDisplayBuffer()
