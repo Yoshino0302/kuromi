@@ -1,22 +1,31 @@
 import * as THREE from 'https://jspm.dev/three'
 
 /*
-KUROMI ENGINE — Ω∞Ω∞Ω ABSOLUTE CONFIG AUTHORITY
-Single source of truth for entire cinematic engine runtime
-Non-destructive. Immutable. Production-grade.
+KUROMI ENGINE — Ω∞Ω∞Ω FINAL ULTIMATE CONFIG AUTHORITY
+ABSOLUTE MASTER CONFIG — AAA CINEMATIC HYBRID RENDERER
+Fully synchronized authority layer for entire engine runtime
+Non-destructive. Immutable. Production-grade. AAA-grade.
 */
+
+/* =========================================================
+META AUTHORITY
+========================================================= */
 
 export const ENGINE_META=Object.freeze({
 
 NAME:'KUROMI',
 VERSION:'Ω∞Ω∞Ω',
-BUILD:'CINEMATIC_FINAL',
+BUILD:'FINAL_ULTIMATE_CONFIG',
 AUTHOR:'KUROMI_ENGINE_CORE',
+
+ARCHITECTURE:'HYBRID_CINEMATIC_RENDERER',
+
+TARGET_CLASS:'AAA',
 
 })
 
 /* =========================================================
-ENGINE GLOBAL FLAGS
+GLOBAL FLAGS AUTHORITY
 ========================================================= */
 
 export const ENGINE_FLAGS=Object.freeze({
@@ -39,10 +48,174 @@ SAFE_MODE:false,
 
 ENABLE_ASSERTIONS:false,
 
+ENABLE_GPU_MARKERS:false,
+
+ENABLE_PROFILING:false,
+
 })
 
 /* =========================================================
-ENGINE FEATURE SWITCHES
+GPU AUTHORITY (NEW — CRITICAL)
+========================================================= */
+
+export const ENGINE_GPU=Object.freeze({
+
+API:'WEBGL2',
+
+USE_COMPUTE_SHADERS:true,
+
+USE_MULTI_DRAW_INDIRECT:true,
+
+USE_INSTANCING:true,
+
+USE_BINDLESS_TEXTURES:false,
+
+USE_GPU_CULLING:true,
+
+USE_GPU_SKINNING:true,
+
+USE_GPU_PARTICLES:true,
+
+USE_GPU_OCCLUSION:true,
+
+USE_GPU_FRUSTUM_CULLING:true,
+
+MAX_UNIFORM_BUFFERS:1024,
+
+MAX_STORAGE_BUFFERS:1024,
+
+MAX_TEXTURE_UNITS:32,
+
+MAX_RENDER_TARGETS:16,
+
+MAX_VERTEX_ATTRIBUTES:32,
+
+MAX_DRAW_INDIRECT_COUNT:1048576,
+
+PARALLEL_SHADER_COMPILE:true,
+
+ASYNC_SHADER_COMPILE:true,
+
+})
+
+/* =========================================================
+PIPELINE AUTHORITY (NEW — CRITICAL)
+========================================================= */
+
+export const ENGINE_PIPELINE=Object.freeze({
+
+RENDERING_MODE:'HYBRID',
+
+ENABLE_FORWARD:false,
+
+ENABLE_DEFERRED:true,
+
+ENABLE_CLUSTERED_LIGHTING:true,
+
+ENABLE_TILED_LIGHTING:true,
+
+ENABLE_RENDER_GRAPH:true,
+
+ENABLE_FRAME_GRAPH:true,
+
+ENABLE_ASYNC_COMPUTE:true,
+
+ENABLE_PASS_CULLING:true,
+
+ENABLE_PASS_BATCHING:true,
+
+MAX_RENDER_PASSES:1024,
+
+MAX_FRAME_GRAPH_NODES:2048,
+
+MAX_PIPELINE_STAGES:256,
+
+})
+
+/* =========================================================
+MEMORY AUTHORITY
+========================================================= */
+
+export const ENGINE_MEMORY=Object.freeze({
+
+MAX_CPU_MEMORY:8*1024*1024*1024,
+
+MAX_GPU_MEMORY:4*1024*1024*1024,
+
+MAX_TEXTURES:65536,
+
+MAX_MESHES:100000,
+
+MAX_MATERIALS:65536,
+
+MAX_RENDER_TARGETS:2048,
+
+GC_INTERVAL:300,
+
+RESOURCE_LIFETIME:600,
+
+BUFFER_POOL_SIZE:2048,
+
+ENABLE_MEMORY_TRACKING:true,
+
+ENABLE_MEMORY_DEFRAGMENTATION:true,
+
+})
+
+/* =========================================================
+MEMORY POOLS AUTHORITY (NEW — AAA REQUIRED)
+========================================================= */
+
+export const ENGINE_MEMORY_POOLS=Object.freeze({
+
+GEOMETRY_POOL:2*1024*1024*1024,
+
+TEXTURE_POOL:4*1024*1024*1024,
+
+RENDER_TARGET_POOL:2*1024*1024*1024,
+
+STAGING_POOL:512*1024*1024,
+
+UNIFORM_POOL:256*1024*1024,
+
+STORAGE_POOL:512*1024*1024,
+
+DESCRIPTOR_POOL:128*1024*1024,
+
+FRAME_TEMP_POOL:512*1024*1024,
+
+})
+
+/* =========================================================
+SHADER AUTHORITY (NEW — CRITICAL)
+========================================================= */
+
+export const ENGINE_SHADERS=Object.freeze({
+
+CACHE_ENABLED:true,
+
+CACHE_SIZE:1024*1024*1024,
+
+HOT_RELOAD:true,
+
+ENABLE_OPTIMIZATION:true,
+
+ENABLE_DEBUG_SYMBOLS:false,
+
+ENABLE_REFLECTION:true,
+
+MAX_VARIANTS:100000,
+
+MAX_PERMUTATIONS:1000000,
+
+ASYNC_COMPILE:true,
+
+PARALLEL_COMPILE:true,
+
+})
+
+/* =========================================================
+FEATURE SWITCHES AUTHORITY
 ========================================================= */
 
 export const ENGINE_FEATURES=Object.freeze({
@@ -79,127 +252,11 @@ PERFORMANCE_SCALING:true,
 
 THREADING:true,
 
-})
+STREAMING:true,
 
-/* =========================================================
-TIMING AUTHORITY
-========================================================= */
+ASYNC_COMPUTE:true,
 
-export const ENGINE_TIMING=Object.freeze({
-
-TARGET_FPS:24,
-
-MIN_FPS:12,
-
-MAX_FPS:240,
-
-FIXED_TIMESTEP:1/60,
-
-MAX_DELTA:0.25,
-
-MIN_DELTA:1/1000,
-
-CLOCK_AUTO_START:false,
-
-TIME_SCALE:1.0,
-
-FRAME_SMOOTHING:0.9,
-
-})
-
-/* =========================================================
-RENDERER AUTHORITY
-========================================================= */
-
-export const ENGINE_RENDERER=Object.freeze({
-
-PRECISION:'highp',
-
-POWER_PREFERENCE:'high-performance',
-
-ANTIALIAS:false,
-
-ALPHA:false,
-
-DEPTH:true,
-
-STENCIL:false,
-
-PREMULTIPLIED_ALPHA:false,
-
-PRESERVE_DRAWING_BUFFER:false,
-
-FAIL_IF_MAJOR_PERFORMANCE_CAVEAT:false,
-
-LOGARITHMIC_DEPTH_BUFFER:true,
-
-COLOR_SPACE:THREE.SRGBColorSpace,
-
-TONE_MAPPING:THREE.NoToneMapping,
-
-EXPOSURE:1.0,
-
-USE_PHYSICALLY_CORRECT_LIGHTS:true,
-
-SHADOW_MAP_ENABLED:true,
-
-SHADOW_MAP_TYPE:THREE.PCFSoftShadowMap,
-
-MAX_TEXTURE_SIZE:16384,
-
-MAX_CUBE_MAP_SIZE:16384,
-
-MAX_RENDERBUFFER_SIZE:16384,
-
-})
-
-/* =========================================================
-RESOLUTION SCALING
-========================================================= */
-
-export const ENGINE_SCALING=Object.freeze({
-
-ENABLED:true,
-
-TARGET_FPS:24,
-
-MIN_SCALE:0.25,
-
-MAX_SCALE:1.0,
-
-ADAPT_RATE:0.05,
-
-INCREASE_RATE:0.01,
-
-DECREASE_RATE:0.05,
-
-STABILITY_FRAMES:30,
-
-})
-
-/* =========================================================
-MEMORY AUTHORITY
-========================================================= */
-
-export const ENGINE_MEMORY=Object.freeze({
-
-MAX_CPU_MEMORY:8*1024*1024*1024,
-
-MAX_GPU_MEMORY:4*1024*1024*1024,
-
-MAX_TEXTURES:65536,
-
-MAX_MESHES:100000,
-
-MAX_MATERIALS:65536,
-
-MAX_RENDER_TARGETS:512,
-
-GC_INTERVAL:300,
-
-RESOURCE_LIFETIME:600,
-
-BUFFER_POOL_SIZE:512,
+RENDER_GRAPH:true,
 
 })
 
@@ -212,62 +269,86 @@ export const ENGINE_THREADING=Object.freeze({
 ENABLED:true,
 
 MAX_WORKERS:typeof navigator!=='undefined'
-?navigator.hardwareConcurrency||4
-:4,
-
-ENABLE_OFFSCREEN_CANVAS:true,
+?navigator.hardwareConcurrency||8
+:8,
 
 ENABLE_SHARED_ARRAY_BUFFER:false,
 
+ENABLE_OFFSCREEN_CANVAS:true,
+
+ENABLE_WORKER_RENDERING:false,
+
 WORKER_INIT_TIMEOUT:5000,
 
-})
+ENABLE_JOB_SYSTEM:true,
 
-/* =========================================================
-SCENE LIMITS
-========================================================= */
-
-export const ENGINE_LIMITS=Object.freeze({
-
-MAX_OBJECTS:200000,
-
-MAX_LIGHTS:4096,
-
-MAX_CAMERAS:64,
-
-MAX_BONES:1024,
-
-MAX_INSTANCES:1000000,
-
-MAX_DRAW_CALLS:200000,
-
-MAX_VERTICES:200000000,
+MAX_JOB_QUEUE:65536,
 
 })
 
 /* =========================================================
-DEFAULT CAMERA AUTHORITY
+FRAME PACING AUTHORITY (NEW)
 ========================================================= */
 
-export const ENGINE_CAMERA=Object.freeze({
+export const ENGINE_FRAME_PACING=Object.freeze({
 
-FOV:50,
+ENABLED:true,
 
-NEAR:0.01,
+TARGET_FPS:24,
 
-FAR:100000,
+TARGET_FRAME_TIME:1/24,
 
-FOCAL_LENGTH:50,
+MAX_FRAME_TIME:1/5,
 
-APERTURE:1.4,
+MIN_FRAME_TIME:1/1000,
 
-SHUTTER_SPEED:1/48,
+JITTER_REDUCTION:true,
 
-ISO:100,
+FRAME_SMOOTHING:true,
 
-SENSOR_HEIGHT:24,
+SMOOTHING_FACTOR:0.9,
 
-FOCUS_DISTANCE:10,
+})
+
+/* =========================================================
+RENDER GRAPH AUTHORITY (NEW)
+========================================================= */
+
+export const ENGINE_RENDER_GRAPH=Object.freeze({
+
+ENABLED:true,
+
+MAX_NODES:4096,
+
+MAX_RESOURCES:8192,
+
+ENABLE_PASS_CULLING:true,
+
+ENABLE_RESOURCE_ALIASING:true,
+
+ENABLE_TRANSIENT_RESOURCES:true,
+
+})
+
+/* =========================================================
+ASYNC COMPUTE AUTHORITY (NEW)
+========================================================= */
+
+export const ENGINE_ASYNC=Object.freeze({
+
+ENABLED:true,
+
+MAX_ASYNC_JOBS:1024,
+
+ENABLE_ASYNC_RENDER:true,
+
+ENABLE_ASYNC_COMPUTE:true,
+
+ENABLE_ASYNC_STREAMING:true,
+
+ENABLE_ASYNC_PATH_TRACING:true,
+
+ENABLE_ASYNC_GI:true,
 
 })
 
@@ -279,7 +360,7 @@ export const ENGINE_CLEAR=Object.freeze({
 
 COLOR:new THREE.Color(0x000000),
 
-ALPHA:1.0,
+ALPHA:1,
 
 DEPTH:1,
 
@@ -287,291 +368,172 @@ STENCIL:0,
 
 })
 /* =========================================================
-TEMPORAL RESOLVE AUTHORITY
+HYBRID RENDERER AUTHORITY (NEW — CRITICAL)
 ========================================================= */
 
-export const ENGINE_TEMPORAL=Object.freeze({
+export const ENGINE_HYBRID_RENDERER=Object.freeze({
 
 ENABLED:true,
 
-MAX_HISTORY_FRAMES:64,
+ENABLE_RASTER:true,
 
-MIN_HISTORY_FRAMES:4,
+ENABLE_PATH_TRACING:true,
 
-BLEND_MIN:0.65,
+ENABLE_HYBRID_BLEND:true,
 
-BLEND_MAX:0.98,
+HYBRID_BLEND_MODE:'ENERGY_CONSERVING',
 
-CLAMP_STRENGTH:0.85,
+PATH_TRACING_WEIGHT:0.5,
 
-REJECTION_THRESHOLD:0.15,
+RASTER_WEIGHT:0.5,
 
-MOTION_INFLUENCE:0.35,
+ENABLE_TEMPORAL_ACCUMULATION:true,
 
-ROTATION_INFLUENCE:0.25,
+ACCUMULATION_FRAMES:4096,
 
-DEPTH_REJECTION:true,
+RESET_ACCUMULATION_ON_CAMERA_MOVE:true,
 
-COLOR_CLAMP:true,
+RESET_ACCUMULATION_ON_SCENE_CHANGE:true,
 
-VARIANCE_CLAMP:true,
+RESET_ACCUMULATION_ON_RESIZE:true,
 
-RESET_ON_CAMERA_CUT:true,
+ENABLE_ADAPTIVE_SAMPLING:true,
 
-RESET_ON_RESOLUTION_CHANGE:true,
+MIN_SAMPLES:1,
 
-JITTER_ENABLED:true,
+MAX_SAMPLES:8192,
 
-JITTER_SEQUENCE_LENGTH:1024,
+TARGET_NOISE_THRESHOLD:0.001,
 
-SUBPIXEL_OFFSET:true,
+ENABLE_DENOISER:true,
+
+DENOISER_TYPE:'TEMPORAL_SPATIAL',
 
 })
 
 /* =========================================================
-MOTION BLUR AUTHORITY
+PATH TRACING AUTHORITY (UPGRADED)
 ========================================================= */
 
-export const ENGINE_MOTION_BLUR=Object.freeze({
+export const ENGINE_PATH_TRACER=Object.freeze({
 
 ENABLED:true,
 
-SHUTTER_ANGLE:180,
+MAX_BOUNCES:12,
 
-SHUTTER_SPEED:1/48,
+MAX_DIFFUSE_BOUNCES:8,
 
-SAMPLES:8,
+MAX_SPECULAR_BOUNCES:12,
 
-MAX_SAMPLES:32,
+MAX_TRANSMISSION_BOUNCES:12,
 
-STRENGTH:1.0,
+MAX_VOLUME_BOUNCES:4,
 
-MAX_VELOCITY:200,
+MAX_SAMPLES:8192,
 
-VELOCITY_SCALE:1.0,
+MIN_SAMPLES:1,
 
-CAMERA_INFLUENCE:1.0,
+TARGET_SAMPLES_PER_FRAME:1,
 
-OBJECT_INFLUENCE:1.0,
+ADAPTIVE_SAMPLING:true,
 
-ROTATION_BLUR:true,
+NOISE_THRESHOLD:0.001,
 
-TRANSLATION_BLUR:true,
+ENABLE_RUSSIAN_ROULETTE:true,
+
+RR_MIN_BOUNCE:3,
+
+RR_PROBABILITY:0.8,
+
+ENABLE_NEXT_EVENT_ESTIMATION:true,
+
+ENABLE_MIS:true,
+
+ENABLE_CAUSTICS:true,
+
+ENABLE_PARTICIPATING_MEDIA:true,
+
+ENABLE_VOLUME_SCATTERING:true,
+
+ENABLE_SSS:true,
+
+ENABLE_SPECTRAL:true,
+
+ENABLE_RESTIR:true,
+
+ENABLE_TEMPORAL_REUSE:true,
+
+ENABLE_SPATIAL_REUSE:true,
+
+ENABLE_RESERVOIR_RESAMPLING:true,
 
 })
 
 /* =========================================================
-DEPTH OF FIELD AUTHORITY
+SPECTRAL RENDERING AUTHORITY (UPGRADED)
 ========================================================= */
 
-export const ENGINE_DOF=Object.freeze({
+export const ENGINE_SPECTRAL=Object.freeze({
 
 ENABLED:true,
 
-PHYSICAL:true,
+WAVELENGTH_COUNT:31,
 
-MAX_BLUR:0.05,
+WAVELENGTH_MIN:380,
 
-SAMPLES:16,
+WAVELENGTH_MAX:780,
 
-MAX_SAMPLES:64,
+ENABLE_DISPERSION:true,
 
-APERTURE_BLADES:7,
+ENABLE_SPECTRAL_MATERIALS:true,
 
-APERTURE_ROTATION:0,
+ENABLE_SPECTRAL_LIGHTS:true,
 
-ANAMORPHIC_RATIO:1.0,
+ENABLE_SPECTRAL_VOLUME:true,
 
-CAT_EYE_STRENGTH:0.0,
+ENABLE_SPECTRAL_SSS:true,
 
-FOCUS_SPEED:5.0,
+ENABLE_SPECTRAL_PATH_TRACING:true,
 
-AUTO_FOCUS:false,
+ENABLE_WAVELENGTH_IMPORTANCE_SAMPLING:true,
+
+ENABLE_HERO_WAVELENGTH:true,
+
+ENABLE_SPECTRAL_MIS:true,
 
 })
 
 /* =========================================================
-VOLUMETRIC LIGHT AUTHORITY
+RESTIR AUTHORITY (UPGRADED)
 ========================================================= */
 
-export const ENGINE_VOLUMETRIC=Object.freeze({
+export const ENGINE_RESTIR=Object.freeze({
 
 ENABLED:true,
 
-FOG_ENABLED:true,
+ENABLE_DIRECT:true,
 
-FOG_DENSITY:0.01,
+ENABLE_INDIRECT:true,
 
-FOG_HEIGHT_FALLOFF:0.05,
+ENABLE_GI:true,
 
-FOG_START:0,
+ENABLE_CAUSTICS:true,
 
-FOG_END:10000,
+ENABLE_TEMPORAL_REUSE:true,
 
-SCATTERING_ENABLED:true,
+ENABLE_SPATIAL_REUSE:true,
 
-SCATTERING_STRENGTH:1.0,
+ENABLE_BIAS_CORRECTION:true,
 
-ANISOTROPY:0.2,
+ENABLE_RESERVOIR_MERGING:true,
 
-SAMPLE_COUNT:64,
+MAX_RESERVOIRS:16777216,
 
-MAX_SAMPLE_COUNT:256,
+RESERVOIR_M_CLAMP:64,
 
-TEMPORAL_REPROJECTION:true,
+TARGET_CANDIDATES:32,
 
-NOISE_ENABLED:true,
-
-NOISE_SCALE:0.1,
-
-NOISE_STRENGTH:0.2,
-
-LIGHT_SHAFTS:true,
-
-})
-
-/* =========================================================
-COLOR GRADING AUTHORITY
-========================================================= */
-
-export const ENGINE_COLOR_GRADING=Object.freeze({
-
-ENABLED:true,
-
-EXPOSURE:1.0,
-
-GAMMA:2.2,
-
-CONTRAST:1.0,
-
-SATURATION:1.0,
-
-VIBRANCE:0.0,
-
-GAIN:1.0,
-
-LIFT:0.0,
-
-OFFSET:0.0,
-
-WHITE_BALANCE:6500,
-
-TEMPERATURE:0,
-
-TINT:0,
-
-ACES_ENABLED:true,
-
-FILMIC_CURVE:true,
-
-})
-
-/* =========================================================
-LENS SIMULATION AUTHORITY
-========================================================= */
-
-export const ENGINE_LENS=Object.freeze({
-
-ENABLED:true,
-
-DISTORTION_ENABLED:true,
-
-DISTORTION_K1:0.0,
-
-DISTORTION_K2:0.0,
-
-DISTORTION_K3:0.0,
-
-CHROMATIC_ABERRATION:true,
-
-CHROMATIC_STRENGTH:0.002,
-
-VIGNETTE_ENABLED:true,
-
-VIGNETTE_INTENSITY:0.25,
-
-VIGNETTE_FALLOFF:0.5,
-
-BREATHING_ENABLED:true,
-
-BREATHING_STRENGTH:0.02,
-
-DIRT_TEXTURE_ENABLED:false,
-
-FLARE_ENABLED:false,
-
-})
-
-/* =========================================================
-FILM GRAIN AUTHORITY
-========================================================= */
-
-export const ENGINE_FILM_GRAIN=Object.freeze({
-
-ENABLED:true,
-
-PHYSICAL:true,
-
-ISO:100,
-
-INTENSITY:1.0,
-
-SIZE:1.0,
-
-COLORED:true,
-
-TEMPORAL:true,
-
-ANIMATED:true,
-
-LUMINANCE_INFLUENCE:1.0,
-
-SHADOW_INFLUENCE:1.5,
-
-MIDTONE_INFLUENCE:1.0,
-
-HIGHLIGHT_INFLUENCE:0.5,
-
-})
-/* =========================================================
-REFLECTION AUTHORITY
-========================================================= */
-
-export const ENGINE_REFLECTIONS=Object.freeze({
-
-ENABLED:true,
-
-MODE:'HYBRID',
-
-SSR_ENABLED:true,
-
-SSR_MAX_STEPS:64,
-
-SSR_STEP_SIZE:0.2,
-
-SSR_THICKNESS:0.1,
-
-SSR_BINARY_SEARCH_STEPS:8,
-
-SSR_MAX_DISTANCE:1000,
-
-SSR_FADE_START:100,
-
-SSR_FADE_END:1000,
-
-SSR_TEMPORAL:true,
-
-SSR_SPATIAL:true,
-
-REFLECTION_PROBE_ENABLED:true,
-
-PROBE_RESOLUTION:256,
-
-PROBE_UPDATE_RATE:30,
-
-INTENSITY:1.0,
-
-ROUGHNESS_ATTENUATION:true,
+MAX_SPATIAL_RADIUS:64,
 
 })
 
@@ -583,178 +545,26 @@ export const ENGINE_GI=Object.freeze({
 
 ENABLED:true,
 
-MODE:'HYBRID',
+TYPE:'PATH_TRACED',
 
-INTENSITY:1.0,
+ENABLE_DIFFUSE:true,
 
-BOUNCES:2,
+ENABLE_SPECULAR:true,
 
-MAX_BOUNCES:8,
+ENABLE_MULTI_BOUNCE:true,
 
-DIFFUSE_ENABLED:true,
+ENABLE_INFINITE_BOUNCE_APPROX:false,
 
-SPECULAR_ENABLED:true,
+ENABLE_TEMPORAL_REUSE:true,
 
-PROBE_ENABLED:true,
+ENABLE_SPATIAL_REUSE:true,
 
-PROBE_GRID_RESOLUTION:12,
-
-PROBE_UPDATE_RATE:60,
-
-PROBE_RAYS:128,
-
-PROBE_IRRADIANCE_RESOLUTION:16,
-
-PROBE_DISTANCE:10,
-
-TEMPORAL_ACCUMULATION:true,
-
-SPATIAL_FILTER:true,
-
-DENOISER_ENABLED:true,
+ENABLE_PROBE_CACHE:false,
 
 })
 
 /* =========================================================
-PATH TRACER AUTHORITY
-========================================================= */
-
-export const ENGINE_PATH_TRACER=Object.freeze({
-
-ENABLED:true,
-
-MAX_BOUNCES:12,
-
-MIN_BOUNCES:2,
-
-MAX_SAMPLES:4096,
-
-SAMPLES_PER_FRAME:1,
-
-MAX_RAYS_PER_FRAME:1000000,
-
-RUSSIAN_ROULETTE:true,
-
-RR_DEPTH:4,
-
-RR_PROBABILITY:0.8,
-
-MIS_ENABLED:true,
-
-NEXT_EVENT_ESTIMATION:true,
-
-DIRECT_LIGHT_SAMPLING:true,
-
-INDIRECT_LIGHT_SAMPLING:true,
-
-ENVIRONMENT_SAMPLING:true,
-
-CAUSTICS_ENABLED:true,
-
-FIRELY_REDUCTION:true,
-
-CLAMP_DIRECT:10,
-
-CLAMP_INDIRECT:5,
-
-EPSILON:1e-6,
-
-BVH_ENABLED:true,
-
-BVH_MAX_DEPTH:64,
-
-BVH_LEAF_SIZE:4,
-
-})
-
-/* =========================================================
-SPECTRAL RENDERING AUTHORITY
-========================================================= */
-
-export const ENGINE_SPECTRAL=Object.freeze({
-
-ENABLED:true,
-
-MODE:'HERO_WAVELENGTH',
-
-LAMBDA_MIN:380,
-
-LAMBDA_MAX:780,
-
-BANDS:31,
-
-SAMPLES_PER_PIXEL:1,
-
-DISPERSION_ENABLED:true,
-
-DISPERSION_STRENGTH:0.02,
-
-WAVELENGTH_JITTER:true,
-
-TEMPORAL_ACCUMULATION:true,
-
-})
-
-/* =========================================================
-ReSTIR AUTHORITY
-========================================================= */
-
-export const ENGINE_RESTIR=Object.freeze({
-
-ENABLED:true,
-
-TEMPORAL_REUSE:true,
-
-SPATIAL_REUSE:true,
-
-MAX_RESERVOIRS:1048576,
-
-CANDIDATES_PER_PIXEL:32,
-
-SPATIAL_RADIUS:30,
-
-TEMPORAL_CONFIDENCE:0.9,
-
-BIAS_CORRECTION:true,
-
-VISIBILITY_REUSE:true,
-
-DIRECT_LIGHTING:true,
-
-INDIRECT_LIGHTING:true,
-
-})
-
-/* =========================================================
-SUBSURFACE SCATTERING AUTHORITY
-========================================================= */
-
-export const ENGINE_SSS=Object.freeze({
-
-ENABLED:true,
-
-MODE:'RANDOM_WALK',
-
-MAX_STEPS:32,
-
-STEP_SIZE:0.001,
-
-MAX_DISTANCE:0.1,
-
-SCATTERING_COEFFICIENT:1.0,
-
-ABSORPTION_COEFFICIENT:0.1,
-
-ANISOTROPY:0.0,
-
-TEMPORAL_ACCUMULATION:true,
-
-SPATIAL_FILTER:true,
-
-})
-
-/* =========================================================
-HDR AUTHORITY
+HDR AUTHORITY (UPGRADED)
 ========================================================= */
 
 export const ENGINE_HDR=Object.freeze({
@@ -763,114 +573,388 @@ ENABLED:true,
 
 AUTO_EXPOSURE:true,
 
-KEY_VALUE:0.18,
+EXPOSURE:1.0,
 
-MIN_LUMINANCE:0.001,
+MIN_EXPOSURE:0.01,
 
-MAX_LUMINANCE:100000,
+MAX_EXPOSURE:100.0,
 
-MIN_EXPOSURE:0.0001,
+ADAPTATION_SPEED:0.05,
 
-MAX_EXPOSURE:10000,
+ENABLE_EYE_ADAPTATION:true,
 
-ADAPTATION_RATE:0.05,
+ENABLE_LOCAL_TONEMAP:true,
 
-TEMPORAL_SMOOTHING:true,
+ENABLE_BLOOM:true,
 
-HISTOGRAM_ENABLED:true,
+ENABLE_GLARE:true,
 
-HISTOGRAM_BINS:256,
+ENABLE_LENS_DIRT:true,
 
-BLOOM_ENABLED:false,
+})
+
+/* =========================================================
+CAMERA AUTHORITY (FULL PHYSICAL MODEL)
+========================================================= */
+
+export const ENGINE_CAMERA=Object.freeze({
+
+FOV:50,
+
+NEAR:0.01,
+
+FAR:100000,
+
+ENABLE_PHYSICAL_CAMERA:true,
+
+APERTURE:1.4,
+
+SHUTTER_SPEED:1/48,
+
+ISO:100,
+
+APERTURE_SHAPE:'CIRCULAR',
+
+APERTURE_BLADES:9,
+
+ENABLE_BREATHING:true,
+
+BREATHING_FACTOR:0.02,
+
+ENABLE_AUTO_FOCUS:true,
+
+FOCUS_SPEED:0.1,
+
+ENABLE_FOCUS_SMOOTHING:true,
+
+ENABLE_CAMERA_SHAKE:false,
+
+})
+
+/* =========================================================
+STREAMING AUTHORITY (NEW)
+========================================================= */
+
+export const ENGINE_STREAMING=Object.freeze({
+
+ENABLED:true,
+
+ENABLE_TEXTURE_STREAMING:true,
+
+ENABLE_GEOMETRY_STREAMING:true,
+
+ENABLE_SHADER_STREAMING:true,
+
+MAX_CONCURRENT_REQUESTS:64,
+
+STREAM_BUDGET_MB:512,
+
+TEXTURE_STREAMING_BUDGET_MB:256,
+
+GEOMETRY_STREAMING_BUDGET_MB:256,
+
+ENABLE_ASYNC_UPLOAD:true,
+
+ENABLE_PRIORITY_STREAMING:true,
 
 })
 /* =========================================================
-VALIDATION
+TEMPORAL AUTHORITY
 ========================================================= */
 
-function validateNumber(value,min,max,fallback){
+export const ENGINE_TEMPORAL=Object.freeze({
 
-if(typeof value!=='number')return fallback
+ENABLED:true,
 
-if(value<min)return min
+MAX_HISTORY_FRAMES:4096,
 
-if(value>max)return max
+MIN_HISTORY_FRAMES:1,
 
-return value
+ENABLE_REPROJECTION:true,
 
-}
+ENABLE_MOTION_VECTORS:true,
 
-function validateBoolean(value,fallback){
+ENABLE_DISOCCLUSION_DETECTION:true,
 
-if(typeof value!=='boolean')return fallback
+ENABLE_HISTORY_CLAMPING:true,
 
-return value
+CLAMP_STRENGTH:0.85,
 
-}
+BLEND_FACTOR:0.9,
 
-function validateObject(value,fallback){
+RESET_ON_CAMERA_CUT:true,
 
-if(typeof value!=='object'||value===null)return fallback
+RESET_ON_RESOLUTION_CHANGE:true,
 
-return value
+RESET_ON_SCENE_CHANGE:true,
 
-}
+})
 
 /* =========================================================
-DEEP FREEZE
+MOTION BLUR AUTHORITY
 ========================================================= */
 
-function deepFreeze(object){
+export const ENGINE_MOTION_BLUR=Object.freeze({
 
-Object.freeze(object)
+ENABLED:true,
 
-for(const key of Object.getOwnPropertyNames(object)){
+MAX_SAMPLES:64,
 
-const value=object[key]
+SHUTTER_SPEED:1/48,
 
-if(
-value!==null &&
-(typeof value==='object'||typeof value==='function') &&
-!Object.isFrozen(value)
-){
+ENABLE_OBJECT_BLUR:true,
 
-deepFreeze(value)
+ENABLE_CAMERA_BLUR:true,
 
-}
+ENABLE_VELOCITY_CLAMP:true,
 
-}
+VELOCITY_CLAMP:64.0,
 
-return object
-
-}
+})
 
 /* =========================================================
-MASTER CONFIG OBJECT
+DEPTH OF FIELD AUTHORITY
 ========================================================= */
 
-const EngineConfigRaw={
+export const ENGINE_DOF=Object.freeze({
+
+ENABLED:true,
+
+MODEL:'PHYSICAL',
+
+MAX_BLUR_SIZE:64,
+
+BOKEH_SHAPE:'CIRCULAR',
+
+BOKEH_BLADES:9,
+
+ENABLE_APERTURE_SIMULATION:true,
+
+ENABLE_FOCUS_TRANSITION:true,
+
+FOCUS_SPEED:0.1,
+
+})
+
+/* =========================================================
+VOLUMETRIC AUTHORITY
+========================================================= */
+
+export const ENGINE_VOLUMETRIC=Object.freeze({
+
+ENABLED:true,
+
+ENABLE_FOG:true,
+
+ENABLE_VOLUMETRIC_LIGHTING:true,
+
+ENABLE_VOLUME_SCATTERING:true,
+
+ENABLE_TEMPORAL_REPROJECTION:true,
+
+GRID_SIZE_X:160,
+
+GRID_SIZE_Y:90,
+
+GRID_SIZE_Z:128,
+
+MAX_STEPS:128,
+
+})
+
+/* =========================================================
+COLOR GRADING AUTHORITY
+========================================================= */
+
+export const ENGINE_COLOR_GRADING=Object.freeze({
+
+ENABLED:true,
+
+ENABLE_LUT:true,
+
+ENABLE_TONE_MAPPING:true,
+
+TONE_MAPPING:'ACES',
+
+EXPOSURE:1.0,
+
+CONTRAST:1.0,
+
+SATURATION:1.0,
+
+VIBRANCE:0.0,
+
+WHITE_BALANCE:6500,
+
+})
+
+/* =========================================================
+LENS AUTHORITY
+========================================================= */
+
+export const ENGINE_LENS=Object.freeze({
+
+ENABLED:true,
+
+ENABLE_DISTORTION:true,
+
+ENABLE_CHROMATIC_ABERRATION:true,
+
+ENABLE_VIGNETTE:true,
+
+ENABLE_GLARE:true,
+
+DISTORTION_STRENGTH:0.05,
+
+CHROMATIC_ABERRATION:0.002,
+
+VIGNETTE_STRENGTH:0.2,
+
+})
+
+/* =========================================================
+FILM GRAIN AUTHORITY
+========================================================= */
+
+export const ENGINE_FILM_GRAIN=Object.freeze({
+
+ENABLED:true,
+
+STRENGTH:0.04,
+
+SIZE:1.0,
+
+ANIMATED:true,
+
+TEMPORAL_VARIATION:true,
+
+})
+
+/* =========================================================
+REFLECTION AUTHORITY
+========================================================= */
+
+export const ENGINE_REFLECTIONS=Object.freeze({
+
+ENABLED:true,
+
+TYPE:'HYBRID',
+
+ENABLE_SCREEN_SPACE:true,
+
+ENABLE_RAY_TRACED:true,
+
+ENABLE_TEMPORAL_REUSE:true,
+
+MAX_STEPS:128,
+
+})
+
+/* =========================================================
+PERFORMANCE SCALING AUTHORITY
+========================================================= */
+
+export const ENGINE_SCALING=Object.freeze({
+
+ENABLED:true,
+
+TARGET_FPS:24,
+
+MIN_SCALE:0.25,
+
+MAX_SCALE:1.0,
+
+ADAPTATION_SPEED:0.05,
+
+ENABLE_DYNAMIC_RESOLUTION:true,
+
+ENABLE_DYNAMIC_SAMPLING:true,
+
+})
+
+/* =========================================================
+TIMING AUTHORITY
+========================================================= */
+
+export const ENGINE_TIMING=Object.freeze({
+
+TARGET_FPS:24,
+
+FIXED_TIMESTEP:1/24,
+
+MAX_DELTA_TIME:1/5,
+
+MIN_DELTA_TIME:1/1000,
+
+CLOCK_AUTO_START:false,
+
+ENABLE_FRAME_SMOOTHING:true,
+
+})
+
+/* =========================================================
+VALIDATION AUTHORITY
+========================================================= */
+
+export const ENGINE_VALIDATION=Object.freeze({
+
+VALIDATE_CONFIG:true,
+
+VALIDATE_GPU_CAPS:true,
+
+VALIDATE_MEMORY_LIMITS:true,
+
+VALIDATE_SHADER_SUPPORT:true,
+
+STRICT_VALIDATION:false,
+
+})
+
+/* =========================================================
+FINAL UNIFIED CONFIG EXPORT (ABSOLUTE AUTHORITY)
+========================================================= */
+
+export const ENGINE_CONFIG=Object.freeze({
 
 META:ENGINE_META,
 
 FLAGS:ENGINE_FLAGS,
 
-FEATURES:ENGINE_FEATURES,
+GPU:ENGINE_GPU,
 
-TIMING:ENGINE_TIMING,
-
-RENDERER:ENGINE_RENDERER,
-
-SCALING:ENGINE_SCALING,
+PIPELINE:ENGINE_PIPELINE,
 
 MEMORY:ENGINE_MEMORY,
 
+MEMORY_POOLS:ENGINE_MEMORY_POOLS,
+
+SHADERS:ENGINE_SHADERS,
+
+FEATURES:ENGINE_FEATURES,
+
 THREADING:ENGINE_THREADING,
 
-LIMITS:ENGINE_LIMITS,
+FRAME_PACING:ENGINE_FRAME_PACING,
+
+RENDER_GRAPH:ENGINE_RENDER_GRAPH,
+
+ASYNC:ENGINE_ASYNC,
+
+HYBRID_RENDERER:ENGINE_HYBRID_RENDERER,
+
+PATH_TRACER:ENGINE_PATH_TRACER,
+
+SPECTRAL:ENGINE_SPECTRAL,
+
+RESTIR:ENGINE_RESTIR,
+
+GI:ENGINE_GI,
+
+HDR:ENGINE_HDR,
 
 CAMERA:ENGINE_CAMERA,
 
-CLEAR:ENGINE_CLEAR,
+STREAMING:ENGINE_STREAMING,
 
 TEMPORAL:ENGINE_TEMPORAL,
 
@@ -888,135 +972,12 @@ FILM_GRAIN:ENGINE_FILM_GRAIN,
 
 REFLECTIONS:ENGINE_REFLECTIONS,
 
-GI:ENGINE_GI,
+SCALING:ENGINE_SCALING,
 
-PATH_TRACER:ENGINE_PATH_TRACER,
+TIMING:ENGINE_TIMING,
 
-SPECTRAL:ENGINE_SPECTRAL,
+CLEAR:ENGINE_CLEAR,
 
-RESTIR:ENGINE_RESTIR,
+VALIDATION:ENGINE_VALIDATION,
 
-SSS:ENGINE_SSS,
-
-HDR:ENGINE_HDR,
-
-}
-
-/* =========================================================
-RUNTIME ACCESS API
-========================================================= */
-
-export function getEngineConfig(){
-
-return EngineConfig
-
-}
-
-export function getEngineFeature(name){
-
-if(!EngineConfig.FEATURES[name])return false
-
-return true
-
-}
-
-export function getEngineLimit(name){
-
-return EngineConfig.LIMITS[name]
-
-}
-
-export function getEngineRendererConfig(){
-
-return EngineConfig.RENDERER
-
-}
-
-export function getEngineTimingConfig(){
-
-return EngineConfig.TIMING
-
-}
-
-/* =========================================================
-RUNTIME VALIDATION PASS
-========================================================= */
-
-function validateConfig(config){
-
-config.TIMING.TARGET_FPS=
-validateNumber(
-config.TIMING.TARGET_FPS,
-1,
-1000,
-24
-)
-
-config.SCALING.MIN_SCALE=
-validateNumber(
-config.SCALING.MIN_SCALE,
-0.1,
-1,
-0.25
-)
-
-config.SCALING.MAX_SCALE=
-validateNumber(
-config.SCALING.MAX_SCALE,
-0.1,
-2,
-1
-)
-
-config.PATH_TRACER.MAX_BOUNCES=
-validateNumber(
-config.PATH_TRACER.MAX_BOUNCES,
-1,
-128,
-12
-)
-
-config.MEMORY.MAX_TEXTURES=
-validateNumber(
-config.MEMORY.MAX_TEXTURES,
-1,
-1000000,
-65536
-)
-
-return config
-
-}
-
-/* =========================================================
-FINAL CONFIG BUILD
-========================================================= */
-
-const EngineConfigValidated=validateConfig(
-EngineConfigRaw
-)
-
-export const EngineConfig=deepFreeze(
-EngineConfigValidated
-)
-
-/* =========================================================
-RUNTIME LOCK
-========================================================= */
-
-Object.defineProperty(
-EngineConfig,
-'__LOCKED__',
-{
-value:true,
-writable:false,
-enumerable:false,
-configurable:false
-}
-)
-
-/* =========================================================
-EXPORT DEFAULT
-========================================================= */
-
-export default EngineConfig
+})
