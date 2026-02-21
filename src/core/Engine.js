@@ -1080,7 +1080,7 @@ if(Engine.instance instanceof Engine){
 return Engine.instance
 
 }
-
+this.options=options
 Object.defineProperty(
 Engine,
 "instance",
@@ -1094,12 +1094,14 @@ enumerable:false
 
 this.options=options
 this.config=ENGINE_CONFIG
+
 if(!this.config){
 throw new Error("[ENGINE_AUTHORITY] EngineConfig missing")
 }
+
 __ENGINE_AUTHORITY_CONTAINER.config=this.config
-Object.freeze(this.config)
-Object.freeze(__ENGINE_AUTHORITY_CONTAINER.config)
+__ENGINE_AUTHORITY_CONTAINER.runtime=this
+
 this.state=ENGINE_STATE.CONSTRUCTED
 this.executionMode=EXECUTION_MODE.CINEMATIC_PRIORITY
 
@@ -1115,7 +1117,8 @@ this.environmentSystem=null
 this.performanceMonitor=null
 this.performanceScaler=null
 
-this.frameGraph=new FrameGraphExecutor(this)
+this.frameGraph=null
+this._frameGraphPendingInit=true
 
 /* ==============================
 CINEMATIC SYSTEMS INITIALIZATION
