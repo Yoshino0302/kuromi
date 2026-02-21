@@ -11,7 +11,29 @@ import {AssetManager} from '../assets/AssetManager.js'
 import {EnvironmentSystem} from '../world/EnvironmentSystem.js'
 import {PerformanceMonitor} from '../systems/PerformanceMonitor.js'
 import {PerformanceScaler} from '../systems/PerformanceScaler.js'
+const __ENGINE_AUTHORITY_CONTAINER={
+config:null,
+derived:null,
+gpu:null,
+runtime:null,
+renderer:null,
+locked:false
+}
 
+function __lockAuthorityContainer(){
+if(__ENGINE_AUTHORITY_CONTAINER.locked)return
+Object.freeze(__ENGINE_AUTHORITY_CONTAINER.config)
+Object.freeze(__ENGINE_AUTHORITY_CONTAINER.derived)
+Object.freeze(__ENGINE_AUTHORITY_CONTAINER.gpu)
+Object.freeze(__ENGINE_AUTHORITY_CONTAINER.runtime)
+__ENGINE_AUTHORITY_CONTAINER.locked=true
+}
+
+function __assertAuthorityIntegrity(){
+if(!__ENGINE_AUTHORITY_CONTAINER.locked){
+throw new Error("[ENGINE_AUTHORITY] Integrity violation")
+}
+}
 const ENGINE_STATE={CONSTRUCTED:0,INITIALIZING:1,INITIALIZED:2,RUNNING:3,PAUSED:4,STOPPED:5,SHUTTING_DOWN:6,DESTROYED:7}
 const EXECUTION_MODE={CPU_PRIORITY:0,GPU_PRIORITY:1,CINEMATIC_PRIORITY:2}
 const FRAME_PHASE={BEGIN:0,FIXED:1,UPDATE:2,PRE_RENDER:3,RENDER:4,POST_RENDER:5,END:6}
@@ -1020,7 +1042,11 @@ Engine.instance=this
 
 this.options=options
 this.config=EngineConfig
-
+if(!this.config){
+throw new Error("[ENGINE_AUTHORITY] EngineConfig missing")
+}
+__ENGINE_AUTHORITY_CONTAINER.config=this.config
+Object.freeze(__ENGINE_AUTHORITY_CONTAINER.config)
 this.state=ENGINE_STATE.CONSTRUCTED
 this.executionMode=EXECUTION_MODE.CINEMATIC_PRIORITY
 
@@ -1205,6 +1231,23 @@ engine:this,
 config:this.config.RENDERER
 })
 await this.renderer.init?.()
+__ENGINE_AUTHORITY_CONTAINER.renderer=this.renderer
+Object.freeze(__ENGINE_AUTHORITY_CONTAINER.renderer)
+
+const caps=this.renderer.capabilities||{}
+
+this.gpu={
+precision:caps.precision||"highp",
+maxTextures:caps.maxTextures||0,
+maxAttributes:caps.maxAttributes||0,
+maxTextureSize:caps.maxTextureSize||0,
+maxRenderTargets:caps.maxRenderTargets||0
+}
+
+Object.freeze(this.gpu)
+
+__ENGINE_AUTHORITY_CONTAINER.gpu=this.gpu
+Object.freeze(__ENGINE_AUTHORITY_CONTAINER.gpu)
 
 this.pipeline=new CinematicRenderPipeline(this)
 await this.pipeline.init?.()
@@ -1256,10 +1299,21 @@ this.reflectionSystem.initialize(rawRenderer)
 /* ============================== */
 
 this.initialized=true
+__ENGINE_AUTHORITY_CONTAINER.runtime={
+engine:this,
+config:this.config,
+renderer:this.renderer,
+gpu:this.gpu,
+pipeline:this.pipeline,
+systemManager:this.systemManager
+}
+
+Object.freeze(__ENGINE_AUTHORITY_CONTAINER.runtime)
+
+__lockAuthorityContainer()
+}
 
 return this
-
-}
 
 start(){
 
