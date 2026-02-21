@@ -1046,6 +1046,7 @@ if(!this.config){
 throw new Error("[ENGINE_AUTHORITY] EngineConfig missing")
 }
 __ENGINE_AUTHORITY_CONTAINER.config=this.config
+Object.freeze(this.config)
 Object.freeze(__ENGINE_AUTHORITY_CONTAINER.config)
 this.state=ENGINE_STATE.CONSTRUCTED
 this.executionMode=EXECUTION_MODE.CINEMATIC_PRIORITY
@@ -1341,7 +1342,7 @@ this.render(delta)
 }
 
 update(delta){
-
+__assertAuthorityIntegrity()
 this.delta=delta
 this.time+=delta
 
@@ -1370,7 +1371,7 @@ this.systemManager?.update?.(delta)
 }
 
 render(delta){
-
+__assertAuthorityIntegrity()
 const renderer=this.renderer
 const scene=this.sceneManager?.getScene?.()
 const camera=this.cameraSystem?.getCamera?.()
