@@ -1,4 +1,5 @@
 import * as THREE from 'https://jspm.dev/three'
+import EngineConfig from './EngineConfig.js'
 import {Renderer} from '../renderer/Renderer.js'
 import {CinematicRenderPipeline} from '../renderer/CinematicRenderPipeline.js'
 import {SceneManager} from '../scene/SceneManager.js'
@@ -1018,6 +1019,7 @@ if(Engine.instance)return Engine.instance
 Engine.instance=this
 
 this.options=options
+this.config=EngineConfig
 
 this.state=ENGINE_STATE.CONSTRUCTED
 this.executionMode=EXECUTION_MODE.CINEMATIC_PRIORITY
@@ -1040,19 +1042,145 @@ this.frameGraph=new FrameGraphExecutor(this)
 CINEMATIC SYSTEMS INITIALIZATION
 ============================== */
 
-this.temporalSystem=new TemporalResolveSystem(this)
-this.motionBlurSystem=new MotionBlurSystem(this)
-this.dofSystem=new PhysicalDOFSystem(this)
-this.volumetricSystem=new VolumetricLightSystem(this)
-this.colorGradingSystem=new ColorGradingSystem(this)
-this.lensSystem=new LensSystem(this)
-this.filmGrainSystem=new FilmGrainSystem(this)
-this.reflectionSystem=new ReflectionSystem(this)
-this.giSystem=new GlobalIlluminationSystem(this)
+/* TEMPORAL */
 
+if(this.config.FEATURES.TEMPORAL){
+
+this.temporalSystem=new TemporalResolveSystem(
+this,
+this.config.TEMPORAL
+)
+
+}else{
+
+this.temporalSystem=null
+
+}
+
+/* MOTION BLUR */
+
+if(this.config.FEATURES.MOTION_BLUR){
+
+this.motionBlurSystem=new MotionBlurSystem(
+this,
+this.config.MOTION_BLUR
+)
+
+}else{
+
+this.motionBlurSystem=null
+
+}
+
+/* DOF */
+
+if(this.config.FEATURES.DOF){
+
+this.dofSystem=new PhysicalDOFSystem(
+this,
+this.config.DOF
+)
+
+}else{
+
+this.dofSystem=null
+
+}
+
+/* VOLUMETRIC */
+
+if(this.config.FEATURES.VOLUMETRIC){
+
+this.volumetricSystem=new VolumetricLightSystem(
+this,
+this.config.VOLUMETRIC
+)
+
+}else{
+
+this.volumetricSystem=null
+
+}
+
+/* COLOR GRADING */
+
+if(this.config.FEATURES.COLOR_GRADING){
+
+this.colorGradingSystem=new ColorGradingSystem(
+this,
+this.config.COLOR_GRADING
+)
+
+}else{
+
+this.colorGradingSystem=null
+
+}
+
+/* LENS */
+
+if(this.config.FEATURES.LENS){
+
+this.lensSystem=new LensSystem(
+this,
+this.config.LENS
+)
+
+}else{
+
+this.lensSystem=null
+
+}
+
+/* FILM GRAIN */
+
+if(this.config.FEATURES.FILM_GRAIN){
+
+this.filmGrainSystem=new FilmGrainSystem(
+this,
+this.config.FILM_GRAIN
+)
+
+}else{
+
+this.filmGrainSystem=null
+
+}
+
+/* REFLECTION */
+
+if(this.config.FEATURES.REFLECTIONS){
+
+this.reflectionSystem=new ReflectionSystem(
+this,
+this.config.REFLECTIONS
+)
+
+}else{
+
+this.reflectionSystem=null
+
+}
+
+/* GLOBAL ILLUMINATION */
+
+if(this.config.FEATURES.GLOBAL_ILLUMINATION){
+
+this.giSystem=new GlobalIlluminationSystem(
+this,
+this.config.GI
+)
+
+}else{
+
+this.giSystem=null
+
+}
 /* ============================== */
 
-this.clock=new THREE.Clock(false)
+this.clock=new THREE.Clock(
+this.config.TIMING.CLOCK_AUTO_START
+)
 
 this.time=0
 this.delta=0
@@ -1071,7 +1199,11 @@ async init(){
 
 if(this.initialized)return this
 
-this.renderer=new Renderer({...this.options,engine:this})
+this.renderer=new Renderer({
+...this.options,
+engine:this,
+config:this.config.RENDERER
+})
 await this.renderer.init?.()
 
 this.pipeline=new CinematicRenderPipeline(this)
@@ -1097,17 +1229,19 @@ await this.assetManager.init?.()
 this.environmentSystem=new EnvironmentSystem(this)
 await this.environmentSystem.init?.()
 
-this.performanceMonitor=new PerformanceMonitor({targetFPS:24})
+this.performanceMonitor=new PerformanceMonitor({
+targetFPS:this.config.TIMING.TARGET_FPS
+})
 
 const rawRenderer=this.renderer.getRenderer?.()
 
 if(rawRenderer){
 
 this.performanceScaler=new PerformanceScaler(rawRenderer,{
-targetFPS:24,
-minFPS:12,
-maxScale:1,
-minScale:0.25
+targetFPS:this.config.SCALING.TARGET_FPS,
+minFPS:this.config.TIMING.MIN_FPS,
+maxScale:this.config.SCALING.MAX_SCALE,
+minScale:this.config.SCALING.MIN_SCALE
 })
 
 }
