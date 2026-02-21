@@ -1,5 +1,5 @@
 import * as THREE from 'https://jspm.dev/three'
-import EngineConfig from './EngineConfig.js'
+import{ENGINE_CONFIG,initializeEngineConfig,getDerivedConfig,getGPUCapabilities,assertEngineConfigAuthority,getEngineConfigRuntimeState}from'./EngineConfig.js'
 import {Renderer} from '../renderer/Renderer.js'
 import {CinematicRenderPipeline} from '../renderer/CinematicRenderPipeline.js'
 import {SceneManager} from '../scene/SceneManager.js'
@@ -1041,7 +1041,7 @@ if(Engine.instance)return Engine.instance
 Engine.instance=this
 
 this.options=options
-this.config=EngineConfig
+this.config=ENGINE_CONFIG
 if(!this.config){
 throw new Error("[ENGINE_AUTHORITY] EngineConfig missing")
 }
@@ -1232,19 +1232,13 @@ engine:this,
 config:this.config.RENDERER
 })
 await this.renderer.init?.()
+initializeEngineConfig(this.renderer.getRenderer?.()||this.renderer)
+this.derived=getDerivedConfig()
+assertEngineConfigAuthority()
 __ENGINE_AUTHORITY_CONTAINER.renderer=this.renderer
 Object.freeze(__ENGINE_AUTHORITY_CONTAINER.renderer)
 
-const caps=this.renderer.capabilities||{}
-
-this.gpu={
-precision:caps.precision||"highp",
-maxTextures:caps.maxTextures||0,
-maxAttributes:caps.maxAttributes||0,
-maxTextureSize:caps.maxTextureSize||0,
-maxRenderTargets:caps.maxRenderTargets||0
-}
-
+this.gpu=getGPUCapabilities()
 Object.freeze(this.gpu)
 
 __ENGINE_AUTHORITY_CONTAINER.gpu=this.gpu
@@ -1303,10 +1297,12 @@ this.initialized=true
 __ENGINE_AUTHORITY_CONTAINER.runtime={
 engine:this,
 config:this.config,
-renderer:this.renderer,
+derived:this.derived,
 gpu:this.gpu,
+renderer:this.renderer,
 pipeline:this.pipeline,
-systemManager:this.systemManager
+systemManager:this.systemManager,
+configRuntime:getEngineConfigRuntimeState()
 }
 
 Object.freeze(__ENGINE_AUTHORITY_CONTAINER.runtime)
