@@ -22,28 +22,43 @@ locked:false
 
 function __lockAuthorityContainer(){
 
-if(__ENGINE_AUTHORITY_CONTAINER.locked)return
+if(__ENGINE_AUTHORITY_LOCKED)return
 
-const freezeSafe=(obj)=>{
-if(!obj||typeof obj!=="object")return
-Object.freeze(obj)
-for(const key of Object.keys(obj)){
-const value=obj[key]
-if(value&&typeof value==="object"&&!Object.isFrozen(value)){
-Object.freeze(value)
+const deepFreeze=(obj,seen=new WeakSet())=>{
+
+if(obj===null||typeof obj!=="object")return obj
+
+if(seen.has(obj))return obj
+
+seen.add(obj)
+
+const keys=Reflect.ownKeys(obj)
+
+for(let i=0;i<keys.length;i++){
+
+const value=obj[keys[i]]
+
+if(value&&typeof value==="object"){
+
+deepFreeze(value,seen)
+
 }
+
 }
+
+return Object.freeze(obj)
+
 }
 
-freezeSafe(__ENGINE_AUTHORITY_CONTAINER.config)
-freezeSafe(__ENGINE_AUTHORITY_CONTAINER.derived)
-freezeSafe(__ENGINE_AUTHORITY_CONTAINER.gpu)
-freezeSafe(__ENGINE_AUTHORITY_CONTAINER.runtime)
-freezeSafe(__ENGINE_AUTHORITY_CONTAINER.renderer)
+deepFreeze(__ENGINE_AUTHORITY_CONTAINER.renderer)
 
-__ENGINE_AUTHORITY_CONTAINER.locked=true
+deepFreeze(__ENGINE_AUTHORITY_CONTAINER.gpu)
 
-Object.freeze(__ENGINE_AUTHORITY_CONTAINER)
+deepFreeze(__ENGINE_AUTHORITY_CONTAINER.runtime)
+
+deepFreeze(__ENGINE_AUTHORITY_CONTAINER)
+
+__ENGINE_AUTHORITY_LOCKED=true
 
 }
 
@@ -1075,12 +1090,12 @@ return instance
 
 constructor(options={}){
 
-if(Engine.instance instanceof Engine){
+if(Engine.instance!==null&&Engine.instance instanceof Engine){
 
 return Engine.instance
 
 }
-this.options=options
+
 Object.defineProperty(
 Engine,
 "instance",
@@ -1093,16 +1108,21 @@ enumerable:false
 )
 
 this.options=options
+
 this.config=ENGINE_CONFIG
 
 if(!this.config){
+
 throw new Error("[ENGINE_AUTHORITY] EngineConfig missing")
+
 }
 
 __ENGINE_AUTHORITY_CONTAINER.config=this.config
+
 __ENGINE_AUTHORITY_CONTAINER.runtime=this
 
 this.state=ENGINE_STATE.CONSTRUCTED
+
 this.executionMode=EXECUTION_MODE.CINEMATIC_PRIORITY
 
 this.renderer=null
@@ -1118,6 +1138,7 @@ this.performanceMonitor=null
 this.performanceScaler=null
 
 this.frameGraph=null
+
 this._frameGraphPendingInit=true
 
 /* ==============================
@@ -1126,7 +1147,7 @@ CINEMATIC SYSTEMS INITIALIZATION
 
 /* TEMPORAL */
 
-if(this.config.FEATURES.TEMPORAL){
+if(this.config.FEATURES?.TEMPORAL){
 
 this.temporalSystem=new TemporalResolveSystem(
 this,
@@ -1141,7 +1162,7 @@ this.temporalSystem=null
 
 /* MOTION BLUR */
 
-if(this.config.FEATURES.MOTION_BLUR){
+if(this.config.FEATURES?.MOTION_BLUR){
 
 this.motionBlurSystem=new MotionBlurSystem(
 this,
@@ -1156,7 +1177,7 @@ this.motionBlurSystem=null
 
 /* DOF */
 
-if(this.config.FEATURES.DOF){
+if(this.config.FEATURES?.DOF){
 
 this.dofSystem=new PhysicalDOFSystem(
 this,
@@ -1171,7 +1192,7 @@ this.dofSystem=null
 
 /* VOLUMETRIC */
 
-if(this.config.FEATURES.VOLUMETRIC){
+if(this.config.FEATURES?.VOLUMETRIC){
 
 this.volumetricSystem=new VolumetricLightSystem(
 this,
@@ -1186,7 +1207,7 @@ this.volumetricSystem=null
 
 /* COLOR GRADING */
 
-if(this.config.FEATURES.COLOR_GRADING){
+if(this.config.FEATURES?.COLOR_GRADING){
 
 this.colorGradingSystem=new ColorGradingSystem(
 this,
@@ -1201,7 +1222,7 @@ this.colorGradingSystem=null
 
 /* LENS */
 
-if(this.config.FEATURES.LENS){
+if(this.config.FEATURES?.LENS){
 
 this.lensSystem=new LensSystem(
 this,
@@ -1216,7 +1237,7 @@ this.lensSystem=null
 
 /* FILM GRAIN */
 
-if(this.config.FEATURES.FILM_GRAIN){
+if(this.config.FEATURES?.FILM_GRAIN){
 
 this.filmGrainSystem=new FilmGrainSystem(
 this,
@@ -1231,7 +1252,7 @@ this.filmGrainSystem=null
 
 /* REFLECTION */
 
-if(this.config.FEATURES.REFLECTIONS){
+if(this.config.FEATURES?.REFLECTIONS){
 
 this.reflectionSystem=new ReflectionSystem(
 this,
@@ -1246,7 +1267,7 @@ this.reflectionSystem=null
 
 /* GLOBAL ILLUMINATION */
 
-if(this.config.FEATURES.GLOBAL_ILLUMINATION){
+if(this.config.FEATURES?.GLOBAL_ILLUMINATION){
 
 this.giSystem=new GlobalIlluminationSystem(
 this,
@@ -1258,25 +1279,51 @@ this.config.GI
 this.giSystem=null
 
 }
+
 /* ============================== */
 
 this.clock=new THREE.Clock(
-this.config.TIMING.CLOCK_AUTO_START
+this.config.TIMING?.CLOCK_AUTO_START??false
 )
 
 this.time=0
+
 this.delta=0
+
 this.frame=0
 
 this.running=false
+
 this.initialized=false
+
 this.destroyed=false
+
+this.__loopHandle=null
+
+this.__loopBound=null
 
 this.listeners=new Map()
 
 Object.seal(this)
+
+}
+__clearAllListeners(){
+
+if(!this.listeners)return
+
+for(const [key,value] of this.listeners){
+
+if(Array.isArray(value)){
+
+value.length=0
+
 }
 
+}
+
+this.listeners.clear()
+
+}
 async init(){
 
 if(this.initialized)return this
@@ -1292,8 +1339,22 @@ this.derived=getDerivedConfig()
 __ENGINE_AUTHORITY_CONTAINER.derived=this.derived
 Object.freeze(__ENGINE_AUTHORITY_CONTAINER.derived)
 assertEngineConfigAuthority()
-__ENGINE_AUTHORITY_CONTAINER.renderer=this.renderer
-Object.freeze(__ENGINE_AUTHORITY_CONTAINER.renderer)
+Object.seal(this.renderer)
+
+const rendererAuthorityWrapper=Object.freeze({
+instance:this.renderer
+})
+
+Object.defineProperty(
+__ENGINE_AUTHORITY_CONTAINER,
+"renderer",
+{
+value:rendererAuthorityWrapper,
+writable:false,
+configurable:false,
+enumerable:true
+}
+)
 
 this.gpu=getGPUCapabilities()
 Object.freeze(this.gpu)
@@ -1351,7 +1412,21 @@ this.reflectionSystem.initialize(rawRenderer)
 /* ============================== */
 
 this.initialized=true
-__ENGINE_AUTHORITY_CONTAINER.runtime={
+this.__deepFreezeRuntime=(obj,seen=new WeakSet())=>{
+if(obj===null||typeof obj!=="object")return obj
+if(seen.has(obj))return obj
+seen.add(obj)
+const keys=Reflect.ownKeys(obj)
+for(let i=0;i<keys.length;i++){
+const value=obj[keys[i]]
+if(value&&typeof value==="object"){
+this.__deepFreezeRuntime(value,seen)
+}
+}
+return Object.freeze(obj)
+}
+
+const runtimeAuthority={
 engine:this,
 config:this.config,
 derived:this.derived,
@@ -1362,26 +1437,14 @@ systemManager:this.systemManager,
 configRuntime:getEngineConfigRuntimeState()
 }
 
-Object.freeze(__ENGINE_AUTHORITY_CONTAINER.runtime)
-Object.freeze(__ENGINE_AUTHORITY_CONTAINER.runtime.configRuntime)
-Object.freeze(__ENGINE_AUTHORITY_CONTAINER.runtime.pipeline)
-Object.freeze(__ENGINE_AUTHORITY_CONTAINER.runtime.systemManager)
-Object.freeze(__ENGINE_AUTHORITY_CONTAINER.runtime.engine)
-this.__deepFreezeRuntime=(obj,seen=new WeakSet())=>{
-if(obj===null||typeof obj!=="object")return obj
-if(seen.has(obj))return obj
-seen.add(obj)
-Object.freeze(obj)
-const keys=Object.getOwnPropertyNames(obj)
-for(let i=0;i<keys.length;i++){
-this.__deepFreezeRuntime(obj[keys[i]],seen)
-}
-return obj
-}
-this.__deepFreezeRuntime(__ENGINE_AUTHORITY_CONTAINER.runtime)
+this.__deepFreezeRuntime(runtimeAuthority)
+
+__ENGINE_AUTHORITY_CONTAINER.runtime=runtimeAuthority
 
 __lockAuthorityContainer()
+
 __assertAuthorityIntegrity()
+
 assertEngineConfigAuthority()
 }
 
@@ -1389,25 +1452,46 @@ return this
 
 start(){
 
-if(this.running)return
+if(this.destroyed)return
 
 if(this.running)return
+
+if(this.__loopHandle!==undefined&&this.__loopHandle!==null)return
+
 this.running=true
+
+this.__loopBound=this.__loopBound||this.__loop.bind(this)
+
 this.clock.start()
-this._loop()
+
+this.__loopHandle=requestAnimationFrame(this.__loopBound)
+
+}
+__loop(){
+
+if(!this.running||this.destroyed){
+
+if(this.__loopHandle!==undefined&&this.__loopHandle!==null){
+
+cancelAnimationFrame(this.__loopHandle)
+
+this.__loopHandle=null
+
 }
 
-_loop(){
+return
 
-if(!this.running)return
+}
 
-requestAnimationFrame(()=>this._loop())
+const delta=this.clock.getDelta()
 
-let delta=this.clock.getDelta()
+const elapsed=this.clock.getElapsedTime()
 
-if(!Number.isFinite(delta)||delta<=0||delta>1){
+this.__update(delta,elapsed)
 
-delta=0.016
+this.__render(delta,elapsed)
+
+this.__loopHandle=requestAnimationFrame(this.__loopBound)
 
 }
 
@@ -1447,12 +1531,30 @@ this.systemManager?.update?.(delta)
 }
 
 render(delta){
+
+if(this.destroyed)return
+
+if(!this.running)return
+
 __assertAuthorityIntegrity()
+
 const renderer=this.renderer
+
 const scene=this.sceneManager?.getScene?.()
+
 const camera=this.cameraSystem?.getCamera?.()
 
-if(!renderer||!scene||!camera)return
+const pipeline=this.pipeline
+
+if(!renderer)return
+
+if(!scene)return
+
+if(!camera)return
+
+if(!pipeline)return
+
+if(typeof pipeline.render!=="function")return
 
 const context={
 engine:this,
@@ -1460,6 +1562,40 @@ renderer,
 scene,
 camera,
 delta
+}
+
+try{
+
+if(this.temporalSystem)this.temporalSystem.resolve(context)
+if(this.motionBlurSystem)this.motionBlurSystem.apply(context)
+if(this.dofSystem)this.dofSystem.apply(context)
+if(this.volumetricSystem)this.volumetricSystem.apply(context)
+if(this.colorGradingSystem)this.colorGradingSystem.apply(context)
+if(this.lensSystem)this.lensSystem.apply(context)
+if(this.filmGrainSystem)this.filmGrainSystem.apply(context)
+if(this.reflectionSystem)this.reflectionSystem.apply(context)
+if(this.giSystem)this.giSystem.apply(context)
+
+pipeline.render(
+renderer,
+scene,
+camera,
+delta,
+0,
+null,
+context
+)
+
+this.frame++
+
+}catch(e){
+
+console.error("[ENGINE_RENDER_FATAL]",e)
+
+this.stop()
+
+}
+
 }
 
 /* ==============================
@@ -1498,12 +1634,29 @@ if(!this.running)return
 
 this.running=false
 
+if(this.__loopHandle!==undefined&&this.__loopHandle!==null){
+
+cancelAnimationFrame(this.__loopHandle)
+
+this.__loopHandle=null
+
+}
+
+if(this.clock){
+
 this.clock.stop()
 
 }
 
+}
 dispose(){
 
+if(this.destroyed)return
+
+this.stop()
+
+this.__clearAllListeners()
+  
 if(this.temporalSystem)this.temporalSystem.dispose()
 if(this.motionBlurSystem)this.motionBlurSystem.dispose()
 if(this.dofSystem)this.dofSystem.dispose()
@@ -1514,9 +1667,98 @@ if(this.filmGrainSystem)this.filmGrainSystem.dispose()
 if(this.reflectionSystem)this.reflectionSystem.dispose()
 if(this.giSystem)this.giSystem.dispose()
 
+if(this.pipeline?.dispose)this.pipeline.dispose()
+if(this.renderer?.dispose)this.renderer.dispose()
+const internalRenderer=this.renderer?.getRenderer?.()||this.renderer?._renderer||this.renderer?.renderer||null
+
+if(internalRenderer){
+
+try{
+
+if(internalRenderer.renderLists?.dispose){
+
+internalRenderer.renderLists.dispose()
+
+}
+
+if(internalRenderer.forceContextLoss){
+
+internalRenderer.forceContextLoss()
+
+}
+
+if(internalRenderer.domElement){
+
+internalRenderer.domElement.width=0
+internalRenderer.domElement.height=0
+
+}
+
+}catch(e){
+
+console.warn("[ENGINE_RENDERER_CLEANUP_WARNING]",e)
+
+}
+
+}
+if(this.sceneManager?.dispose)this.sceneManager.dispose()
+if(this.cameraSystem?.dispose)this.cameraSystem.dispose()
+if(this.systemManager?.dispose)this.systemManager.dispose()
+if(this.scheduler?.dispose)this.scheduler.dispose()
+if(this.assetManager?.dispose)this.assetManager.dispose()
+if(this.environmentSystem?.dispose)this.environmentSystem.dispose()
+
+if(this.performanceMonitor?.dispose)this.performanceMonitor.dispose()
+if(this.performanceScaler?.dispose)this.performanceScaler.dispose()
+
+if(this.memoryMonitor?.dispose)this.memoryMonitor.dispose()
+
+if(this.frameGraph?.clear)this.frameGraph.clear()
+
+if(this.clock){
+
+this.clock.stop()
+
+this.clock=null
+
+}
+
+this.renderer=null
+this.pipeline=null
+this.sceneManager=null
+this.cameraSystem=null
+this.systemManager=null
+this.scheduler=null
+this.assetManager=null
+this.environmentSystem=null
+this.performanceMonitor=null
+this.performanceScaler=null
+this.memoryMonitor=null
+this.frameGraph=null
+
+this.running=false
+this.initialized=false
+
 this.destroyed=true
 
-Engine.instance=null
+}
+this.renderer=null
+this.pipeline=null
+this.sceneManager=null
+this.cameraSystem=null
+this.systemManager=null
+this.scheduler=null
+this.assetManager=null
+this.environmentSystem=null
+this.performanceMonitor=null
+this.performanceScaler=null
+this.memoryMonitor=null
+
+this.frameGraph=null
+
+this.running=false
+this.initialized=false
+this.destroyed=true
 
 }
 
@@ -1901,12 +2143,14 @@ constructor(scene){
 this.scene=scene
 this.bvh=new PTBVHBuilder()
 this.materialMap=new Map()
-this.lights.length=0
+this.lights=[]
 this._extractLights(scene)
 this.bvh.buildFromScene(scene)
 }
 _extractLights(scene){
+if(!scene)return
 scene.traverse(obj=>{
+if(!obj)return
 if(obj.isLight){
 this.lights.push(new PTLight(obj))
 }
@@ -1930,10 +2174,10 @@ this.materialMap.set(object,mat)
 return mat
 }
 intersect(ray,hit){
+if(!this.bvh||!this.bvh.root)return false
 return this.bvh.intersect(ray,hit)
 }
 }
-
 class PTIntegrator{
 constructor(scene){
 this.scene=new PTScene(scene)
@@ -2517,10 +2761,15 @@ class PTGIIntegrator{
 
 constructor(scene,boundsMin,boundsMax,resolution=8){
 
-this.scene=scene
+this.scene=new PTScene(scene)
+
 this.integrator=new PTIntegrator(scene)
+
 this.sampler=new PTSampler(24681357)
+
 this.frame=0
+
+this.maxBounces=PT_MAX_BOUNCES
 
 this.probeGrid=new PTGIProbeGrid(boundsMin,boundsMax,resolution)
 
@@ -2531,8 +2780,9 @@ this.indirectStrength=1.0
 update(){
 
 this.frame++
+
 this.probeGrid.update(
-this.scene,
+this.scene.scene,
 this.integrator,
 this.sampler,
 this.frame
@@ -2542,27 +2792,78 @@ this.frame
 
 evaluateIndirect(position,normal){
 
+if(!position||!normal)return new THREE.Color(0,0,0)
+
 const gi=this.probeGrid.sample(position)
 
 const NdotL=Math.max(normal.dot(new THREE.Vector3(0,1,0)),0)
 
-return gi.multiplyScalar(NdotL*this.indirectStrength)
+return gi.clone().multiplyScalar(NdotL*this.indirectStrength)
 
 }
 
 trace(ray){
 
-const hit=new PTHit() for(let bounce=0;bounce<this.maxBounces;bounce++){
+if(!ray)return new THREE.Color(0,0,0)
 
-if(!this.scene.intersect(ray,hit)){
-return new THREE.Color(0,0,0)
+const hit=new PTHit()
+
+let currentRay=ray.clone()
+
+let result=new THREE.Color(0,0,0)
+
+let throughput=new THREE.Color(1,1,1)
+
+for(let bounce=0;bounce<this.maxBounces;bounce++){
+
+hit.reset()
+
+if(!this.scene.intersect(currentRay,hit)){
+break
 }
 
-const direct=this.integrator.trace(ray)
+const direct=this.integrator.trace(currentRay)
 
 const indirect=this.evaluateIndirect(hit.position,hit.normal)
 
-return direct.add(indirect)
+result.add(
+throughput.clone().multiply(direct).add(
+throughput.clone().multiply(indirect)
+)
+)
+
+const material=this.scene.getMaterial(hit.object)
+
+const newDir=material.sampleDirection(
+hit.normal,
+currentRay.direction.clone().negate(),
+this.sampler
+)
+
+const brdf=material.evaluateBRDF(
+hit.normal,
+currentRay.direction.clone().negate(),
+newDir
+)
+
+throughput.multiply(brdf).clampScalar(0,10)
+
+currentRay=new PTRay(
+hit.position.clone().addScaledVector(hit.normal,PT_EPSILON),
+newDir
+)
+
+if(
+throughput.r<0.0001&&
+throughput.g<0.0001&&
+throughput.b<0.0001
+){
+break
+}
+
+}
+
+return result
 
 }
 
