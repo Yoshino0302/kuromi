@@ -1446,9 +1446,9 @@ __lockAuthorityContainer()
 __assertAuthorityIntegrity()
 
 assertEngineConfigAuthority()
-}
 
-return this
+  return this
+}
 
 start(){
 
@@ -1492,11 +1492,6 @@ this.update(delta,elapsed)
 this.render(delta,elapsed)
 
 this.__loopHandle=requestAnimationFrame(this.__loopBound)
-
-}
-this.update(delta)
-
-this.render(delta)
 
 }
 
@@ -1714,27 +1709,6 @@ this.frameGraph=null
 this.running=false
 this.initialized=false
 this.destroyed=true
-
-}
-this.renderer=null
-this.pipeline=null
-this.sceneManager=null
-this.cameraSystem=null
-this.systemManager=null
-this.scheduler=null
-this.assetManager=null
-this.environmentSystem=null
-this.performanceMonitor=null
-this.performanceScaler=null
-this.memoryMonitor=null
-
-this.frameGraph=null
-
-this.running=false
-this.initialized=false
-this.destroyed=true
-
-}
 
 isRunning(){return this.running}
 isInitialized(){return this.initialized}
